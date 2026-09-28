@@ -60,7 +60,7 @@ export function createPreviewService(
 
   const status = (): ConnectionStatus => ({
     connected,
-    agent: 'ready',
+    core: connected ? 'running' : 'stopped',
     virtual_ip: connected ? '10.144.144.23' : null,
     gateway: connected ? 'online' : 'unknown',
     latency_ms: connected ? 24 : null,
@@ -108,10 +108,10 @@ export function createPreviewService(
         summary: connected ? '连接正常，1 项资源未响应' : '未连接',
         checks: [
           {
-            id: 'agent',
-            label: '后台服务',
-            level: 'pass',
-            message: '正常',
+            id: 'core',
+            label: '网络引擎',
+            level: connected ? 'pass' : 'warning',
+            message: connected ? '运行中' : '已停止',
           },
           {
             id: 'network',
@@ -159,7 +159,7 @@ export function createPreviewService(
         app: '0.1.0',
         easytier_target: '2.6.4',
         easytier_installed: null,
-        protocol: 1,
+        protocol: 2,
       };
     },
     async getPreferences() {

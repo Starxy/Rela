@@ -1,4 +1,3 @@
-pub mod agent;
 pub mod commands;
 pub mod credentials;
 pub mod diagnostics;
@@ -7,7 +6,7 @@ pub mod platform;
 
 pub fn run() {
     tauri::Builder::default()
-        .manage(agent::AgentClient)
+        .manage(easytier::EasyTierCore)
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::connect,

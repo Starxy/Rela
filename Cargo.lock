@@ -2482,14 +2482,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rela-agent"
-version = "0.1.0"
-dependencies = [
- "rela-protocol",
- "serde_json",
-]
-
-[[package]]
 name = "rela-protocol"
 version = "0.1.0"
 dependencies = [

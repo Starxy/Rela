@@ -1,9 +1,0 @@
-[package]
-name = "rela-agent"
-version.workspace = true
-edition.workspace = true
-rust-version.workspace = true
-
-[dependencies]
-rela-protocol.workspace = true
-serde_json.workspace = true

@@ -2,7 +2,7 @@
 
 目标版本固定为 **2.6.4**，来自 [EasyTier 官方 Release](https://github.com/EasyTier/EasyTier/releases/tag/v2.6.4)。这是集成目标，尚未通过 Rela 的组网验证。
 
-初始化工程不包含或自动下载 Core，也不会以 GUI 权限启动 Core。
+初始化工程不包含或自动下载 Core。后续由 Rela 的 Rust 后端直接管理 Core；当前进程控制、RPC 和服务集成尚未实现。
 
 后续集成要求：
 

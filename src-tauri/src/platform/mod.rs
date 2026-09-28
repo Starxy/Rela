@@ -1,3 +1,3 @@
-//! Windows Service、启动项与系统唤醒通知在这里接入。
+//! Rela 在这里直接接入 Core 的 Windows 服务控制、启动项与系统唤醒通知。
+//! Core 服务的安装、权限配置和恢复策略尚未实现。
 //! 当前桌面应用始终按普通用户权限运行。
-pub const WINDOWS_AGENT_PIPE: &str = r"\\.\pipe\rela-agent-v1";

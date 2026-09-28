@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/rela-protocol", "rela-agent", "src-tauri"]
+members = ["crates/rela-protocol", "src-tauri"]
 resolver = "2"
 
 [workspace.package]

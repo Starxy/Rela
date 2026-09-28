@@ -1,7 +1,7 @@
 /** 与 crates/rela-protocol 中的业务模型保持一致；此处禁止出现网络凭据。 */
 export interface ConnectionStatus {
   connected: boolean;
-  agent: 'unavailable' | 'ready';
+  core: 'unavailable' | 'stopped' | 'running';
   virtual_ip: string | null;
   gateway: 'unknown' | 'online' | 'offline';
   latency_ms: number | null;
@@ -64,7 +64,7 @@ export interface RelaService {
 export function errorMessage(error: unknown): string {
   if (typeof error === 'object' && error !== null && 'code' in error) {
     const messages: Record<string, string> = {
-      agent_unavailable: '后台服务不可用',
+      core_unavailable: '网络引擎不可用',
       not_supported: '暂不可用',
       resource_unavailable: '资源不可用',
     };

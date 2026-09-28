@@ -131,7 +131,10 @@ export function Home({
         <ChevronRight size={15} aria-hidden="true" />
       </button>
       <footer className="quick-actions">
-        <button onClick={onDiagnose} disabled={!!busy && busy !== 'diagnostics'}>
+        <button
+          onClick={onDiagnose}
+          disabled={!!busy && busy !== 'diagnostics'}
+        >
           <Activity size={16} aria-hidden="true" />
           诊断
         </button>

@@ -1,4 +1,4 @@
-use crate::{agent::AgentClient, diagnostics};
+use crate::{diagnostics, easytier::EasyTierCore};
 use rela_protocol::{
     AppError, ConnectionStatus, DiagnosticReport, LabResource, Preferences, VersionInfo,
     EASYTIER_TARGET_VERSION, PROTOCOL_VERSION,
@@ -7,28 +7,29 @@ use std::{fs, io::ErrorKind, path::PathBuf};
 use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
-pub fn get_status(agent: State<'_, AgentClient>) -> ConnectionStatus {
-    agent.get_status()
+pub fn get_status(core: State<'_, EasyTierCore>) -> ConnectionStatus {
+    core.get_status()
 }
 
 #[tauri::command]
-pub fn connect(agent: State<'_, AgentClient>) -> Result<ConnectionStatus, AppError> {
-    agent.connect()
+pub fn connect(core: State<'_, EasyTierCore>) -> Result<ConnectionStatus, AppError> {
+    core.connect()
 }
 
 #[tauri::command]
-pub fn disconnect(agent: State<'_, AgentClient>) -> Result<ConnectionStatus, AppError> {
-    agent.disconnect()
+pub fn disconnect(core: State<'_, EasyTierCore>) -> Result<ConnectionStatus, AppError> {
+    core.disconnect()
 }
 
 #[tauri::command]
-pub fn reconnect(agent: State<'_, AgentClient>) -> Result<ConnectionStatus, AppError> {
-    agent.reconnect()
+pub fn reconnect(core: State<'_, EasyTierCore>) -> Result<ConnectionStatus, AppError> {
+    core.reconnect()
 }
 
 #[tauri::command]
-pub fn get_resources(agent: State<'_, AgentClient>) -> Vec<LabResource> {
-    agent.get_resources()
+pub fn get_resources() -> Vec<LabResource> {
+    // 实验室资源由 Rela 管理，待设备接入后从实验室配置中读取。
+    Vec::new()
 }
 
 #[tauri::command]
@@ -90,7 +91,7 @@ pub fn save_preferences(
     if preferences.auto_connect || preferences.launch_at_login {
         return Err(AppError::new(
             "not_supported",
-            "后台服务尚未接入，暂不支持开机启动和自动连接。",
+            "开机启动和自动连接尚未实现。",
         ));
     }
     let path = preferences_path(&app)?;

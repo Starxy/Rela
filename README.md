@@ -1,6 +1,6 @@
 # Rela
 
-面向实验室成员的远程资源入口。React + TypeScript 提供界面，Tauri 2 提供桌面壳，独立的 `rela-agent` 负责未来的高权限网络操作，EasyTier 负责组网。
+面向实验室成员的远程资源入口。React + TypeScript 提供界面，Tauri 2 提供桌面壳，Rela 的 Rust 后端直接管理 EasyTier Core，EasyTier 负责组网。
 
 依据 [产品与技术设计说明](docs/产品与技术设计说明.md) 初始化。当前是 **0.1.0 开发骨架**，尚未达到文档中的 MVP 完成标准。
 
@@ -8,10 +8,10 @@
 
 - 浏览器演示：连接 / 断开状态切换、资源搜索、示例诊断、复制与导出摘要、设备偏好保存。
 - 桌面壳：400 × 560 紧凑窗口、连接开关和关键状态，资源、设置、详情和诊断使用二级弹窗；支持本地设备名称保存和诊断摘要导出。
-- Rust 工作区：桌面端、Agent 入口、共享业务模型及协议版本。
+- Rust 工作区：桌面端、Core 接入入口、前后端业务模型及接口版本。
 - 工程检查：TypeScript、ESLint、Vitest、Prettier、Rust 测试和 Windows CI。
 
-**真实网络功能尚未实现：** Core 进程管理与 RPC、受限 IPC、Windows Service、自动重连、设备注册、安全凭据存储、实际资源检测与打开、系统托盘及完整日志包。
+**真实网络功能尚未实现：** Core 进程管理与 RPC、Core 的 Windows 服务集成、自动重连、设备注册、安全凭据存储、实际资源检测与打开、系统托盘及完整日志包。
 
 浏览器预览使用本地示例数据，界面不展示开发提示条，示例资源不会被实际打开。桌面端始终调用 Native，不会自动回退到演示。
 
@@ -41,7 +41,7 @@ npm run desktop:dev
 
 如果本机已有 Rust 但终端找不到 `cargo`，检查 Rust 安装目录是否加入 `PATH`，重新打开终端后再运行。安装标准 rustup 工具链后，可用 `rustup component add rustfmt clippy` 补齐检查组件。
 
-桌面界面初始显示“未连接”；连接命令会返回 `agent_unavailable`，界面显示“后台服务不可用”。设备名称保存在 Tauri 应用配置目录下的 `preferences.json`，诊断摘要写入应用日志目录；导出后界面显示完整路径。
+桌面界面初始显示“未连接”；连接命令会返回 `core_unavailable`，界面显示“网络引擎不可用”。设备名称保存在 Tauri 应用配置目录下的 `preferences.json`，诊断摘要写入应用日志目录；导出后界面显示完整路径。
 
 ### 构建和检查
 
@@ -61,15 +61,6 @@ Remove-Item Env:VITE_RELA_PREVIEW
 npm run preview
 ```
 
-Agent 入口可以独立验证：
-
-```powershell
-cargo run -p rela-agent -- status
-cargo run -p rela-agent -- --version
-```
-
-当前 `rela-agent` 是命令行骨架，不会注册 Windows 服务、提升权限或建立网络。
-
 ## 目录
 
 ```text
@@ -81,13 +72,11 @@ src/
   types.ts               前端业务模型
 src-tauri/
   src/commands/          Native 命令
-  src/agent/             Agent 客户端边界（待接入传输层）
   src/diagnostics/       离线诊断
-  src/easytier/          固定版本与 RPC 约束
+  src/easytier/          直接管理 Core 的入口（进程控制与 RPC 待实现）
   src/credentials/       安全存储接口（待实现）
-  src/platform/          Windows 平台接入点
+  src/platform/          Core 服务控制与 Windows 平台接入点
   binaries/              固定版本 Core 放置说明
-rela-agent/              独立 Rust 后台服务工程入口
 crates/rela-protocol/    共享模型、错误与协议版本
 docs/                   产品设计、架构与协议
 .github/workflows/      前端检查与 Windows 编译
@@ -96,7 +85,7 @@ docs/                   产品设计、架构与协议
 ## 后续开发顺序
 
 1. 验证固定版本 EasyTier 2.6.4，补齐 Core 生命周期、RPC 状态读取和 sidecar 资产校验。
-2. 接入 Windows Service 和受限 Named Pipe，确保普通用户 GUI 只操作被授权的实验室设备。
+2. 将 Core 作为 Windows 服务运行，由 Rela 直接控制；验证安装提权、服务控制权限、开机启动和关闭界面后保持连接。
 3. 实现校园网关和资源探测、系统快捷入口、自动恢复、托盘及日志脱敏。
 4. 接入邀请码注册、系统凭据存储、Config Server 和设备撤销。
 5. 验证完整安装、升级、卸载流程，完成签名后发布。

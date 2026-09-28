@@ -16,13 +16,13 @@ describe('桌面权限边界', () => {
     expect(await createService()).toBe(desktopService);
   });
 
-  it('IPC 故障不会回退为演示连接成功', async () => {
+  it('Core 不可用时不会回退为演示连接成功', async () => {
     vi.mocked(invoke).mockRejectedValue({
-      code: 'agent_unavailable',
-      message: '服务不可用',
+      code: 'core_unavailable',
+      message: '网络引擎不可用',
     });
     await expect(desktopService.connect()).rejects.toMatchObject({
-      code: 'agent_unavailable',
+      code: 'core_unavailable',
     });
     expect(invoke).toHaveBeenCalledWith('connect');
   });

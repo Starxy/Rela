@@ -1,14 +1,15 @@
-//! GUI 和 Agent 共享的业务模型。不包含网络参数或设备凭据。
+//! Rela 前端与 Rust 后端之间的业务模型。不包含网络参数或设备凭据。
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 pub const EASYTIER_TARGET_VERSION: &str = "2.6.4";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum AgentState {
+pub enum CoreState {
     Unavailable,
-    Ready,
+    Stopped,
+    Running,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -29,7 +30,7 @@ pub enum ConnectionType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionStatus {
     pub connected: bool,
-    pub agent: AgentState,
+    pub core: CoreState,
     pub virtual_ip: Option<String>,
     pub gateway: GatewayState,
     pub latency_ms: Option<u32>,
@@ -43,14 +44,14 @@ impl Default for ConnectionStatus {
     fn default() -> Self {
         Self {
             connected: false,
-            agent: AgentState::Unavailable,
+            core: CoreState::Unavailable,
             virtual_ip: None,
             gateway: GatewayState::Unknown,
             latency_ms: None,
             connection_type: None,
             resources_available: 0,
             resources_total: 0,
-            last_error: Some("后台服务尚未接入。".into()),
+            last_error: Some("网络引擎尚未接入。".into()),
         }
     }
 }
@@ -158,32 +159,12 @@ impl AppError {
         }
     }
 
-    pub fn agent_unavailable() -> Self {
+    pub fn core_unavailable() -> Self {
         Self::new(
-            "agent_unavailable",
-            "后台服务尚未接入。请等待服务安装功能完成后连接。",
+            "core_unavailable",
+            "网络引擎尚未接入，暂时无法控制连接。",
         )
     }
-}
-
-/// 预留的本地 IPC 封装；传输层尚未实现，不能视为已运行的服务。
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct AgentRequest {
-    pub protocol_version: u32,
-    pub request_id: String,
-    pub method: AgentMethod,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum AgentMethod {
-    GetStatus,
-    Connect,
-    Disconnect,
-    Reconnect,
-    GetResources,
-    RunDiagnostics,
 }
 
 #[cfg(test)]
@@ -191,22 +172,22 @@ mod tests {
     use super::*;
 
     #[test]
-    fn unavailable_service_never_claims_connectivity() {
+    fn unavailable_core_never_claims_connectivity() {
         let status = ConnectionStatus::default();
         assert!(!status.connected);
-        assert_eq!(status.agent, AgentState::Unavailable);
+        assert_eq!(status.core, CoreState::Unavailable);
         assert_eq!(status.gateway, GatewayState::Unknown);
         assert!(status.virtual_ip.is_none());
         assert_eq!(status.resources_available, 0);
     }
 
     #[test]
-    fn wire_format_matches_frontend_and_rejects_unknown_methods() {
+    fn core_wire_format_matches_frontend() {
         let status = serde_json::to_value(ConnectionStatus::default()).unwrap();
-        assert_eq!(status["agent"], "unavailable");
+        assert_eq!(status["core"], "unavailable");
         assert!(status["virtual_ip"].is_null());
-        let request = r#"{"protocol_version":1,"request_id":"a","method":"run_shell"}"#;
-        assert!(serde_json::from_str::<AgentRequest>(request).is_err());
+        assert_eq!(serde_json::to_value(CoreState::Stopped).unwrap(), "stopped");
+        assert_eq!(serde_json::to_value(CoreState::Running).unwrap(), "running");
     }
 
     #[test]

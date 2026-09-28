@@ -45,13 +45,15 @@ export function ConnectionDetails({
           </dd>
         </div>
         <div>
-          <dt>后台服务</dt>
+          <dt>网络引擎</dt>
           <dd>
-            {status?.agent === 'ready'
-              ? '正常'
-              : status?.agent === 'unavailable'
-                ? '不可用'
-                : '—'}
+            {status?.core === 'running'
+              ? '运行中'
+              : status?.core === 'stopped'
+                ? '已停止'
+                : status?.core === 'unavailable'
+                  ? '不可用'
+                  : '—'}
           </dd>
         </div>
         <div>

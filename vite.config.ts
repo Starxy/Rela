@@ -9,12 +9,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: [
-        '**/src-tauri/**',
-        '**/rela-agent/**',
-        '**/crates/**',
-        '**/target/**',
-      ],
+      ignored: ['**/src-tauri/**', '**/crates/**', '**/target/**'],
     },
   },
   envPrefix: ['VITE_'],

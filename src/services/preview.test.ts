@@ -6,6 +6,7 @@ describe('浏览器演示状态', () => {
     const service = createPreviewService();
     expect(await service.getStatus()).toMatchObject({
       connected: false,
+      core: 'stopped',
       virtual_ip: null,
       resources_available: 0,
     });
@@ -15,6 +16,7 @@ describe('浏览器演示状态', () => {
       ),
     ).toBe(true);
     const connected = await service.connect();
+    expect(connected.core).toBe('running');
     const resources = await service.getResources();
     expect(connected.virtual_ip).toBeTruthy();
     expect(connected.resources_available).toBe(
@@ -29,6 +31,7 @@ describe('浏览器演示状态', () => {
     await service.disconnect();
     expect(await service.getStatus()).toMatchObject({
       connected: false,
+      core: 'stopped',
       virtual_ip: null,
       connection_type: null,
       latency_ms: null,
