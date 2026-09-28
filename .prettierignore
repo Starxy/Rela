@@ -1,0 +1,8 @@
+node_modules
+dist
+target
+src-tauri/gen
+src-tauri/icons
+package-lock.json
+Cargo.lock
+docs/产品与技术设计说明.md
