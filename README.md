@@ -1,95 +1,79 @@
 # Rela
 
-面向实验室成员的远程资源入口。React + TypeScript 提供界面，Tauri 2 提供桌面壳，Rela 的 Rust 后端直接管理 EasyTier Core，EasyTier 负责组网。
+面向实验室成员的 Windows 网络客户端。React + TypeScript 提供 400 × 560 的连接界面，Tauri / Rust 直接管理 EasyTier Core 2.6.4 Windows 服务。
 
-依据 [产品与技术设计说明](docs/产品与技术设计说明.md) 初始化。当前是 **0.1.0 开发骨架**，尚未达到文档中的 MVP 完成标准。
+## 当前功能
 
-## 当前可以做什么
+- 内置构建时网络配置，默认网络为 `starxy`、节点为 `tcp://47.93.55.228:11010`，默认启用 `private_mode` 和 `disable_p2p`。
+- 设置界面可修改网络名称、密钥、连接节点和两个开关，支持恢复默认和保存后重连。
+- 使用专用 `RelaEasyTier` 服务连接、断开和重连。GUI 保持普通权限，服务变更由同一程序的一次性提权入口执行。目前每次连接控制都需要 UAC 授权。
+- 通过官方 CLI 查询本机 RPC，并核对虚拟网卡地址。只有 Core、节点连接和 TUN 都就绪才显示已连接。
+- 可选校园网关 IPv4 检测、实时诊断和不含密钥的摘要导出。
+- 修改后的配置使用当前 Windows 用户的 DPAPI 加密保存；已保存密钥不回显至前端。
 
-- 浏览器演示：连接 / 断开状态切换、资源搜索、示例诊断、复制与导出摘要、设备偏好保存。
-- 桌面壳：400 × 560 紧凑窗口、连接开关和关键状态，资源、设置、详情和诊断使用二级弹窗；支持本地设备名称保存和诊断摘要导出。
-- Rust 工作区：桌面端、Core 接入入口、前后端业务模型及接口版本。
-- 工程检查：TypeScript、ESLint、Vitest、Prettier、Rust 测试和 Windows CI。
+本项目仅开发客户端，使用现有 EasyTier 网络。资源列表、托盘、开机启动、自动连接和自动升级仍待开发。浏览器预览使用演示数据，不代表真实网络验证通过。
 
-**真实网络功能尚未实现：** Core 进程管理与 RPC、Core 的 Windows 服务集成、自动重连、设备注册、安全凭据存储、实际资源检测与打开、系统托盘及完整日志包。
+## 开发
 
-浏览器预览使用本地示例数据，界面不展示开发提示条，示例资源不会被实际打开。桌面端始终调用 Native，不会自动回退到演示。
-
-## 快速开始
-
-### 浏览器演示
-
-需要 Node.js 22.12+，推荐 Node.js 22 LTS。使用 npm 和仓库中的 `package-lock.json`。
-
-```powershell
-npm ci
-npm run dev
-```
-
-打开 <http://127.0.0.1:1420>。演示偏好保存在浏览器 `localStorage`，连接状态不会跨刷新保存。
-
-### Windows 桌面开发
-
-需要 Rust 1.88+ 的 MSVC 工具链（含 `rustfmt`、`clippy`）、Visual Studio C++ Build Tools、Windows SDK 和 WebView2。详见 [Tauri Windows 前置条件](https://v2.tauri.app/start/prerequisites/#windows)。
+环境：Windows x64、Node.js 22.12+、Rust 1.88+、Visual Studio C++ Build Tools、Windows SDK、WebView2。参见 [Tauri Windows 前置条件](https://v2.tauri.app/start/prerequisites/#windows)。
 
 ```powershell
 npm ci
 npm run desktop:dev
 ```
 
-`desktop:dev` 会自行启动前端开发服务器，请先停止占用 1420 端口的 `npm run dev`。
+首次运行会从官方发布页下载固定版本 Core，并核对 SHA-256。`desktop:dev` 会自行启动前端服务，请先停止占用 1420 端口的其他开发服务。仅看界面可运行 `npm run dev`。
 
-如果本机已有 Rust 但终端找不到 `cargo`，检查 Rust 安装目录是否加入 `PATH`，重新打开终端后再运行。安装标准 rustup 工具链后，可用 `rustup component add rustfmt clippy` 补齐检查组件。
+### 构建默认网络
 
-桌面界面初始显示“未连接”；连接命令会返回 `core_unavailable`，界面显示“网络引擎不可用”。设备名称保存在 Tauri 应用配置目录下的 `preferences.json`，诊断摘要写入应用日志目录；导出后界面显示完整路径。
+`config/network.default.json` 提交公共默认值，不包含真实密钥。开发者可以将它复制为被 Git 忽略的 `config/network.local.json`，填写完整配置。构建时优先使用本地文件；环境变量 `RELA_NETWORK_SECRET` 可覆盖其中的密钥。
 
-### 构建和检查
+发布构建要求提供非空密钥。不要把真实密钥填回默认文件或命令示例。构建默认值只嵌入 Native 程序，不写入前端静态文件。任何拿到安装包的人仍可提取共享密钥，这符合当前共享网络方案，不能当作设备独立凭据。
 
 ```powershell
-npm run check          # 代码检查、前端测试、生产构建
-npm run format:check   # 前端与文档格式
+npm run desktop:build
+```
+
+输出位于 `target/release/bundle/nsis/`。该包当前用于内部测试；尚未签名，也未完成干净系统上的安装、升级、卸载和真实 VPN 验收。上游随附 `Packet.dll` 的再分发许可也是正式发布前的待解决项，见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+
+### 检查
+
+```powershell
+npm run check          # 前端检查、测试、生产构建
+npm run format:check
+npm run prepare:core   # cargo 检查前先准备固定版本资产
 npm run check:rust     # Rust 格式、Clippy、测试
-npm run desktop:build  # 当前桌面壳的 NSIS 安装包
+npm run smoke:core     # 两个仅本机通信的 Core；不创建 TUN、不连接外部网络
 ```
 
-生产前端默认只能在 Tauri 中运行，避免发布时误用演示数据。需要检查浏览器生产演示时：
+CI 使用不带真实密钥的 debug 构建，不连接实验室网络。生产前端默认只接受 Tauri 运行环境；浏览器生产演示须显式设置 `VITE_RELA_PREVIEW=true`。
 
-```powershell
-$env:VITE_RELA_PREVIEW = 'true'
-npm run build
-Remove-Item Env:VITE_RELA_PREVIEW
-npm run preview
-```
+## 运行与数据
+
+首次点击连接会安装 `RelaEasyTier` Windows 服务，并写入经过校验的引擎资产。服务独立于界面，关闭窗口不会主动断开；需要断开时使用首页开关。目前服务为手动启动，不会随系统自动连接。
+
+| 数据                | 位置                                           |
+| ------------------- | ---------------------------------------------- |
+| 用户网络配置        | Tauri 应用配置目录的 `network.dat`，DPAPI 加密 |
+| 设备名称            | 同目录 `preferences.json`                      |
+| 服务程序、Core 配置 | `%ProgramData%/Rela/`，限制为系统和管理员访问  |
+| 诊断摘要            | Tauri 应用日志目录，导出后显示完整路径         |
+
+修改配置后，下次连接或“保存并重连”生效。网关地址可留空；未配置时网关和延迟显示未知。未提供资源清单时桌面端返回空列表。
 
 ## 目录
 
 ```text
-src/
-  pages/                 主界面、资源和设置弹窗内容
-  components/            弹窗、连接详情、资源行与诊断结果
-  hooks/                 状态刷新、互斥操作、错误处理
-  services/              Tauri 适配器与开发演示
-  types.ts               前端业务模型
-src-tauri/
-  src/commands/          Native 命令
-  src/diagnostics/       离线诊断
-  src/easytier/          直接管理 Core 的入口（进程控制与 RPC 待实现）
-  src/credentials/       安全存储接口（待实现）
-  src/platform/          Core 服务控制与 Windows 平台接入点
-  binaries/              固定版本 Core 放置说明
-crates/rela-protocol/    共享模型、错误与协议版本
-docs/                   产品设计、架构与协议
-.github/workflows/      前端检查与 Windows 编译
+config/                  构建默认网络配置
+scripts/                 Core 下载校验、隔离连接验证
+src/                     React 界面、业务服务与浏览器演示
+src-tauri/src/commands/   Tauri 业务命令
+src-tauri/src/easytier/   服务生命周期、CLI 与 RPC 状态解析
+src-tauri/src/platform/   Windows 权限、DPAPI、SCM、网卡和 ICMP
+src-tauri/src/network_config.rs  配置校验、存储和 Core TOML
+src-tauri/installer/      安装包服务清理
+crates/rela-protocol/     共享业务模型
+docs/                    产品设计、架构、接口、验收清单
 ```
 
-## 后续开发顺序
-
-1. 验证固定版本 EasyTier 2.6.4，补齐 Core 生命周期、RPC 状态读取和 sidecar 资产校验。
-2. 将 Core 作为 Windows 服务运行，由 Rela 直接控制；验证安装提权、服务控制权限、开机启动和关闭界面后保持连接。
-3. 实现校园网关和资源探测、系统快捷入口、自动恢复、托盘及日志脱敏。
-4. 接入邀请码注册、系统凭据存储、Config Server 和设备撤销。
-5. 验证完整安装、升级、卸载流程，完成签名后发布。
-
-Sidecar 分发说明见 [binaries/README.md](src-tauri/binaries/README.md)。当前默认构建不要求下载 Core；单独的 sidecar 配置仅预留分发入口。
-
-详细边界见 [架构说明](docs/architecture.md) 和 [接口协议](docs/protocol.md)。
+详见 [架构](docs/architecture.md)、[接口](docs/protocol.md)、[Windows 验收清单](docs/windows-validation.md)。

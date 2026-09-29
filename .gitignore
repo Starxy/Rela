@@ -22,3 +22,4 @@ src-tauri/binaries/*
 !.vscode/extensions.json
 test-results/
 playwright-report/
+config/network.local.json

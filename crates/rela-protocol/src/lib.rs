@@ -1,7 +1,7 @@
 //! Rela 前端与 Rust 后端之间的业务模型。不包含网络参数或设备凭据。
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 pub const EASYTIER_TARGET_VERSION: &str = "2.6.4";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -9,6 +9,8 @@ pub const EASYTIER_TARGET_VERSION: &str = "2.6.4";
 pub enum CoreState {
     Unavailable,
     Stopped,
+    Starting,
+    Stopping,
     Running,
 }
 
@@ -145,6 +147,29 @@ pub struct VersionInfo {
     pub protocol: u32,
 }
 
+/// 可供界面编辑的网络设置视图；已保存的密钥只返回是否存在。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkConfigView {
+    pub network_name: String,
+    pub has_network_secret: bool,
+    pub peers: Vec<String>,
+    pub private_mode: bool,
+    pub disable_p2p: bool,
+    pub gateway_ip: Option<String>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct NetworkConfigUpdate {
+    pub network_name: String,
+    /// None 保留已保存的密钥；Some 必须是有效的非空密钥。
+    pub network_secret: Option<String>,
+    pub peers: Vec<String>,
+    pub private_mode: bool,
+    pub disable_p2p: bool,
+    pub gateway_ip: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppError {
     pub code: String,
@@ -160,10 +185,7 @@ impl AppError {
     }
 
     pub fn core_unavailable() -> Self {
-        Self::new(
-            "core_unavailable",
-            "网络引擎尚未接入，暂时无法控制连接。",
-        )
+        Self::new("core_unavailable", "网络引擎尚未接入，暂时无法控制连接。")
     }
 }
 

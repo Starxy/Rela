@@ -11,6 +11,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "tauri": "tauri",
+    "prepare:core": "node scripts/prepare-easytier.mjs",
+    "smoke:core": "node scripts/smoke-easytier.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
     "lint": "eslint .",

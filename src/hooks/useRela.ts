@@ -5,7 +5,7 @@ import type {
   LabResource,
   RelaService,
 } from '../types';
-import { errorMessage } from '../types';
+import { coreIsActive, errorMessage } from '../types';
 
 export function useRela(service: RelaService) {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
@@ -16,8 +16,10 @@ export function useRela(service: RelaService) {
   const [error, setError] = useState<string | null>(null);
   const busyRef = useRef(false);
   const generation = useRef(0);
+  const refreshing = useRef(0);
 
   const refresh = useCallback(async () => {
+    refreshing.current += 1;
     const request = ++generation.current;
     try {
       const [nextStatus, nextResources] = await Promise.all([
@@ -34,6 +36,8 @@ export function useRela(service: RelaService) {
       setStatus(null);
       setResources([]);
       setError(errorMessage(cause));
+    } finally {
+      refreshing.current -= 1;
     }
   }, [service]);
 
@@ -42,7 +46,7 @@ export function useRela(service: RelaService) {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void refresh();
     const timer = window.setInterval(() => {
-      if (!busyRef.current) void refresh();
+      if (!busyRef.current && refreshing.current === 0) void refresh();
     }, 5000);
     return () => {
       window.clearInterval(timer);
@@ -74,9 +78,10 @@ export function useRela(service: RelaService) {
     notice,
     error,
     dismissNotice: () => setNotice(null),
+    refresh,
     toggleConnection: () =>
       perform('connection', async () => {
-        if (status?.connected) await service.disconnect();
+        if (coreIsActive(status)) await service.disconnect();
         else await service.connect();
         setReport(null);
         await refresh();

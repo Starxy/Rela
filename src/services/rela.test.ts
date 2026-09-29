@@ -32,6 +32,22 @@ describe('桌面权限边界', () => {
     await desktopService.openResource('gpu01');
     expect(invoke).toHaveBeenCalledWith('open_resource', { id: 'gpu01' });
   });
+  it('网络配置使用专用 Native 命令，未修改密钥时不发送空密钥', async () => {
+    const config = {
+      network_name: 'lab',
+      peers: ['tcp://localhost:11010'],
+      private_mode: true,
+      disable_p2p: true,
+      gateway_ip: null,
+    };
+    vi.mocked(invoke).mockResolvedValue({
+      ...config,
+      has_network_secret: true,
+    });
+    await desktopService.saveNetworkConfig(config);
+    expect(invoke).toHaveBeenCalledWith('save_network_config', { config });
+    expect(config).not.toHaveProperty('network_secret');
+  });
 
   it('发布产物在普通浏览器中不默认进入演示', async () => {
     vi.mocked(isTauri).mockReturnValue(false);

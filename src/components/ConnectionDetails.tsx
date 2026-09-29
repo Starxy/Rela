@@ -53,7 +53,11 @@ export function ConnectionDetails({
                 ? '已停止'
                 : status?.core === 'unavailable'
                   ? '不可用'
-                  : '—'}
+                  : status?.core === 'starting'
+                    ? '正在启动'
+                    : status?.core === 'stopping'
+                      ? '正在停止'
+                      : '—'}
           </dd>
         </div>
         <div>
@@ -65,9 +69,9 @@ export function ConnectionDetails({
           </dd>
         </div>
       </dl>
-      {error && (
+      {(error || status?.last_error) && (
         <p className="form-message" role="alert">
-          {error}
+          {error || status?.last_error}
         </p>
       )}
     </>

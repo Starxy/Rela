@@ -1,7 +1,7 @@
-/** 与 crates/rela-protocol 中的业务模型保持一致；此处禁止出现网络凭据。 */
+/** 与 crates/rela-protocol 保持一致；读取模型不包含密钥，仅更新请求可携带新密钥。 */
 export interface ConnectionStatus {
   connected: boolean;
-  core: 'unavailable' | 'stopped' | 'running';
+  core: 'unavailable' | 'stopped' | 'starting' | 'stopping' | 'running';
   virtual_ip: string | null;
   gateway: 'unknown' | 'online' | 'offline';
   latency_ms: number | null;
@@ -46,6 +46,30 @@ export interface VersionInfo {
   protocol: number;
 }
 
+export interface NetworkConfig {
+  network_name: string;
+  has_network_secret: boolean;
+  peers: string[];
+  private_mode: boolean;
+  disable_p2p: boolean;
+  gateway_ip: string | null;
+}
+
+export interface NetworkConfigUpdate {
+  network_name: string;
+  network_secret?: string;
+  peers: string[];
+  private_mode: boolean;
+  disable_p2p: boolean;
+  gateway_ip: string | null;
+}
+
+export function coreIsActive(status: ConnectionStatus | null): boolean {
+  return (
+    status != null && ['running', 'starting', 'stopping'].includes(status.core)
+  );
+}
+
 export interface RelaService {
   mode: 'desktop' | 'preview';
   getStatus(): Promise<ConnectionStatus>;
@@ -59,6 +83,9 @@ export interface RelaService {
   getVersion(): Promise<VersionInfo>;
   getPreferences(): Promise<Preferences>;
   savePreferences(preferences: Preferences): Promise<Preferences>;
+  getNetworkConfig(): Promise<NetworkConfig>;
+  saveNetworkConfig(config: NetworkConfigUpdate): Promise<NetworkConfig>;
+  resetNetworkConfig(): Promise<NetworkConfig>;
 }
 
 export function errorMessage(error: unknown): string {

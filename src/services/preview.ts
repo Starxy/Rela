@@ -1,9 +1,20 @@
 import type {
   ConnectionStatus,
   LabResource,
+  NetworkConfig,
   Preferences,
   RelaService,
 } from '../types';
+import { networkConfigUpdate } from './network-config';
+
+const defaultNetwork = (): NetworkConfig => ({
+  network_name: 'starxy',
+  has_network_secret: true,
+  peers: ['tcp://47.93.55.228:11010'],
+  private_mode: true,
+  disable_p2p: true,
+  gateway_ip: null,
+});
 
 const resourceFixtures: LabResource[] = [
   {
@@ -44,6 +55,7 @@ export function createPreviewService(
   storage?: Pick<Storage, 'getItem' | 'setItem'>,
 ): RelaService {
   let connected = false;
+  let network = defaultNetwork();
   let preferences: Preferences = {
     device_name: '我的电脑',
     launch_at_login: false,
@@ -56,6 +68,14 @@ export function createPreviewService(
     if (isPreferences(saved)) preferences = saved;
   } catch {
     /* 浏览器存储不可用时，演示仍可正常运行。 */
+  }
+  try {
+    const saved: unknown = JSON.parse(
+      storage?.getItem('rela.preview.network') ?? 'null',
+    );
+    if (isNetworkConfig(saved)) network = saved;
+  } catch {
+    /* 损坏的演示配置使用默认值。 */
   }
 
   const status = (): ConnectionStatus => ({
@@ -159,11 +179,41 @@ export function createPreviewService(
         app: '0.1.0',
         easytier_target: '2.6.4',
         easytier_installed: null,
-        protocol: 2,
+        protocol: 3,
       };
     },
     async getPreferences() {
       return { ...preferences };
+    },
+    async getNetworkConfig() {
+      return structuredClone(network);
+    },
+    async saveNetworkConfig(update) {
+      const candidate = { ...network, ...update };
+      networkConfigUpdate(
+        candidate,
+        update.network_secret ?? '',
+        update.peers.join('\n'),
+      );
+      // 演示只记录“已设置”，不持久化输入的密钥。
+      const next: NetworkConfig = {
+        network_name: update.network_name.trim(),
+        has_network_secret:
+          !!update.network_secret || network.has_network_secret,
+        peers: [...new Set(update.peers.map((peer) => peer.trim()))],
+        private_mode: update.private_mode,
+        disable_p2p: update.disable_p2p,
+        gateway_ip: update.gateway_ip?.trim() || null,
+      };
+      storage?.setItem('rela.preview.network', JSON.stringify(next));
+      network = next;
+      return structuredClone(next);
+    },
+    async resetNetworkConfig() {
+      const next = defaultNetwork();
+      storage?.setItem('rela.preview.network', JSON.stringify(next));
+      network = next;
+      return structuredClone(next);
     },
     async savePreferences(next) {
       const normalized = { ...next, device_name: next.device_name.trim() };
@@ -176,6 +226,28 @@ export function createPreviewService(
     },
   };
   return service;
+}
+
+function isNetworkConfig(value: unknown): value is NetworkConfig {
+  if (typeof value !== 'object' || value === null) return false;
+  const entry = value as Record<string, unknown>;
+  if (
+    typeof entry.network_name !== 'string' ||
+    typeof entry.has_network_secret !== 'boolean' ||
+    typeof entry.private_mode !== 'boolean' ||
+    typeof entry.disable_p2p !== 'boolean' ||
+    !Array.isArray(entry.peers) ||
+    !entry.peers.every((peer) => typeof peer === 'string') ||
+    !(entry.gateway_ip === null || typeof entry.gateway_ip === 'string') ||
+    'network_secret' in entry
+  )
+    return false;
+  try {
+    networkConfigUpdate(value as NetworkConfig, '', entry.peers.join('\n'));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function isPreferences(value: unknown): value is Preferences {

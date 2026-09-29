@@ -7,6 +7,7 @@ import {
   Server,
 } from 'lucide-react';
 import type { ConnectionStatus } from '../types';
+import { coreIsActive } from '../types';
 
 interface Props {
   status: ConnectionStatus | null;
@@ -28,18 +29,23 @@ export function Home({
   onDetails,
 }: Props) {
   const connected = status?.connected ?? false;
+  const active = coreIsActive(status);
   const pending = busy === 'connection';
   const label = pending
-    ? connected
+    ? active
       ? '正在断开'
       : '正在连接'
     : error
       ? '状态未知'
       : !status
         ? '正在加载'
-        : connected
-          ? '已连接'
-          : '未连接';
+        : status.core === 'stopping'
+          ? '正在断开'
+          : connected
+            ? '已连接'
+            : active
+              ? '连接未就绪'
+              : '未连接';
 
   return (
     <main className="home">
@@ -51,11 +57,11 @@ export function Home({
           <button
             className={`power-switch ${pending ? 'is-pending' : ''}`}
             role="switch"
-            aria-checked={connected}
+            aria-checked={active}
             aria-label="实验室连接"
             aria-busy={pending}
-            title={connected ? '断开连接' : '连接'}
-            disabled={!!busy || !status}
+            title={active ? '断开连接' : '连接'}
+            disabled={!!busy || !status || status.core === 'stopping'}
             onClick={onConnect}
           >
             {pending ? (

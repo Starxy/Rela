@@ -14,6 +14,9 @@ export const desktopService: RelaService = {
   getVersion: () => invoke('get_version'),
   getPreferences: () => invoke('get_preferences'),
   savePreferences: (preferences) => invoke('save_preferences', { preferences }),
+  getNetworkConfig: () => invoke('get_network_config'),
+  saveNetworkConfig: (config) => invoke('save_network_config', { config }),
+  resetNetworkConfig: () => invoke('reset_network_config'),
 };
 
 export async function createService(): Promise<RelaService> {

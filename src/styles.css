@@ -647,6 +647,77 @@ dd {
   line-height: 1.8;
   margin: 12px 0;
 }
+.settings-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 20px;
+  padding: 3px;
+  border-radius: 8px;
+  background: #f3f6f1;
+}
+.settings-tabs button {
+  flex: 1;
+  border: 0;
+  border-radius: 6px;
+  padding: 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #7a897b;
+  background: transparent;
+  cursor: pointer;
+}
+.settings-tabs button[aria-selected='true'] {
+  color: #365b42;
+  background: #fff;
+  box-shadow: 0 1px 4px #243d2110;
+}
+.network-form .field-label {
+  margin-top: 15px;
+}
+.network-form > .field-label:first-child {
+  margin-top: 0;
+}
+.peer-input {
+  min-height: 62px;
+  resize: vertical;
+  line-height: 1.6;
+}
+.field-hint {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #879287;
+}
+.network-toggles {
+  margin-top: 18px;
+}
+.network-advanced {
+  margin: 18px 0;
+  font-size: 12px;
+  color: #657b69;
+}
+.network-advanced summary {
+  cursor: pointer;
+}
+.network-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 18px;
+}
+.network-actions .button {
+  flex: 1;
+}
+.success-message {
+  color: #488160;
+}
+.text-button {
+  display: block;
+  border: 0;
+  background: none;
+  color: #758572;
+  font-size: 11px;
+  margin: 15px auto 0;
+  cursor: pointer;
+}
 .inline-notice {
   display: flex;
   align-items: flex-start;

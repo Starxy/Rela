@@ -54,7 +54,13 @@ export default function App({ service }: { service: RelaService }) {
       {modal && (
         <Modal title={modalTitles[modal]} onClose={() => setModal(null)}>
           {modal === 'settings' && (
-            <Settings service={service} onSaved={() => setModal(null)} />
+            <Settings
+              service={service}
+              status={rela.status}
+              onSaved={() => {
+                void rela.refresh();
+              }}
+            />
           )}
           {modal === 'resources' && (
             <Resources
