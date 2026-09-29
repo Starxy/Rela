@@ -10,20 +10,20 @@ Rela Rust Native
        ├─ 同一 Rela 程序的临时提权入口 → Windows SCM
        └─ 官方 easytier-cli → 127.0.0.1:35888 RPC
                                       ↓
-                        EasyTier Core 2.6.4 Windows 服务
+                        EasyTier Core 2.7.0-0a783c8e Windows 服务
 ```
 
 不开发独立 Agent 或服务端。后台网络由专用 `RelaEasyTier` 服务承载。GUI 不需要长期管理员权限；连接、断开、重连目前都通过 UAC 授权。同一程序的 helper 只执行本次服务操作并退出。
 
 ## 配置与服务
 
-构建脚本选择 `config/network.local.json` 或 `network.default.json`，环境变量 `RELA_NETWORK_SECRET` 可覆盖密钥。发布构建拒绝空密钥。编译结果只嵌入 Rust 程序。
+构建脚本只从 `config/network.default.json` 选取公共字段，不读取开发者本地 JSON、DPAPI 凭据或 `RELA_NETWORK_SECRET`，发布构建无需密钥。当前公共默认值仍内置；远程资源清单属于后续阶段。
 
-用户修改保存为当前用户的 DPAPI 文件。读取接口只返回 `has_network_secret`，不返回已存密钥。修改接口可传入新密钥；省略表示保留原值。恢复默认使用当前安装包内置值。
+网络配置及 credential 保存为当前用户的 DPAPI 文件 `network.dat`。读取接口只返回 `has_credential`；省略更新字段表示保留同网络凭据，空字符串表示清除。网络名变更不能复用未重新提交的旧凭据。恢复默认清除已存凭据。旧版配置只恢复公共字段，重新导入并保存后覆盖旧密码；后端没有密码认证回退。
 
 提权请求包含有限的动作枚举和已验证配置，以机器范围 DPAPI 加密，临时文件 ACL 仅允许创建者、管理员和系统读取，操作后删除。helper 再次验证输入，不接受任意程序路径或 CLI 参数。
 
-首次连接将固定版本、经过 SHA-256 校验的 Core 和运行库复制到 `%ProgramData%/Rela/engine`，生成 Core TOML 并用官方 CLI 安装手动启动服务。再次连接使用 Windows SCM 启停。Core 配置为 DHCP、独立 TUN 名称 `Rela`、无监听节点、只在回环地址开放 RPC，并禁用环境变量解析。用户配置中的两个网络开关被写入实际 TOML。
+首次连接将固定版本、经过 SHA-256 校验的 Core 和运行库复制到 `%ProgramData%/Rela/engine`，生成受保护的 `core.toml` 并用官方 CLI 安装手动启动服务。再次连接使用 Windows SCM 启停。Core 使用 Secure Mode，`local_private_key` 为获授权的 credential，`local_public_key` 由 X25519 推导；不写入 `network_secret` 或 `peer_public_key`，启动参数只包含配置路径及固定选项。配置保留固定实例 ID、DHCP、TUN 名称 `Rela`、无监听节点、回环 RPC、禁用环境变量解析和用户选择的两个网络开关。
 
 服务控制使用进程内互斥和受保护目录中的独占文件锁，防止多个 Rela 实例同时更新服务配置或引擎。服务名称、程序路径、资源哈希固定；同名但指向其他程序的服务会被拒绝。引擎与配置以临时文件原子替换。
 
@@ -48,7 +48,7 @@ Rela Rust Native
 ## 安全边界与限制
 
 - 前端没有 shell、文件系统插件权限。CSP 禁止远程脚本和页面。
-- 共享密钥随安装包内置，可被安装包持有者提取。DPAPI 保护本地修改，不改变这一产品边界。
+- 安装包不包含网络主密码或客户端 credential。DPAPI 绑定当前 Windows 用户；同一用户下运行的程序以及管理员不在其隔离边界内。
 - Core 工作配置是管理员受保护目录中的明文 TOML；管理员和系统能够读取。
 - RPC 使用回环监听及地址白名单，目前没有独立的调用者身份认证；本机其他进程可能访问 Core RPC。这是当前接入方式的限制。
 - 诊断只导出白名单业务字段，不打包原始日志。摘要包含虚拟 IP 和本机导出路径。
@@ -56,10 +56,12 @@ Rela Rust Native
 
 ## 验证范围
 
-前端测试覆盖命令映射、配置校验和演示服务；Rust 测试覆盖配置序列化、密钥不回显、RPC 解析、DPAPI、命令行参数和文件互斥。隔离 smoke test 使用两个真实 Core，验证私有模式、禁用 P2P、节点连接、错误密钥拒绝、RPC 与停止。
+前端测试覆盖命令映射、凭据格式、网络绑定与清除；Rust 测试覆盖 TOML credential 身份、X25519 标准向量、旧配置读取、DPAPI、凭据不回显、RPC、Windows 参数及文件互斥。新 CLI 的 protobuf JSON 会省略值为零的已连接状态，非零状态使用枚举字符串；解析要求有效的节点 URL，并拒绝把未知状态当作已连接。
+
+隔离测试验证 CLI/TOML/附加启动参数认证与错误凭据拒绝；现网测试使用实际配置生成代码验证 lab201 的 TOML 认证、地址分配和固定实例 ID。测试关闭 TUN，临时明文文件受 ACL 保护并在退出时清理。
 
 隔离验证使用 loopback 和 `no_tun`，不替代服务安装、UAC、驱动、真实网关和资源访问验收。详见 [Windows 验收清单](windows-validation.md)。
 
 ## 工程约定
 
-Node.js 22.12+，Rust 1.88+，提交 npm 与 Cargo 锁文件。Tauri 前端 API、Rust crate、CLI 使用 2.11.x。EasyTier 固定 2.6.4，不在运行时下载 latest。业务模型修改须同步 Rust、TypeScript、接口文档和相关行为测试。
+Node.js 22.12+，Rust 1.88+，提交 npm 与 Cargo 锁文件。Tauri 前端 API、Rust crate、CLI 使用 2.11.x。EasyTier 固定官方开发版 `2.7.0-0a783c8e`，完整提交和 SHA-256 见 `config/easytier-version.json`；Native 直接嵌入该受版本管理的清单进行资产验证，不在运行时下载 latest。Actions 产物有保留期限，长期归档仍待落实。业务模型修改须同步 Rust、TypeScript、接口文档和相关行为测试。

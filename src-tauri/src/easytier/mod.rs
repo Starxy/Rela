@@ -178,7 +178,7 @@ impl EasyTierCore {
             let text = String::from_utf8(bytes).ok()?;
             let version = text.trim().strip_prefix("easytier-core ")?;
             version
-                .starts_with(EASYTIER_TARGET_VERSION)
+                .eq(EASYTIER_TARGET_VERSION)
                 .then(|| version.to_owned())
         })
         .await
@@ -277,7 +277,7 @@ fn integrity_error() -> AppError {
 
 fn verify_assets(directory: &Path) -> Result<(), AppError> {
     let manifest: AssetManifest =
-        serde_json::from_str(include_str!("../../binaries/easytier/manifest.json"))
+        serde_json::from_str(include_str!("../../../config/easytier-version.json"))
             .map_err(|_| integrity_error())?;
     if manifest.version != EASYTIER_TARGET_VERSION {
         return Err(integrity_error());

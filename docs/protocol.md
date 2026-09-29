@@ -1,6 +1,6 @@
 # Rela 本地接口协议
 
-Tauri 业务接口版本 `3`；JSON 字段使用 `snake_case`。Rust 定义位于 `crates/rela-protocol/src/lib.rs`，前端镜像位于 `src/types.ts`。此版本独立于 EasyTier RPC 协议。
+Tauri 业务接口版本 `4`；JSON 字段使用 `snake_case`。Rust 定义位于 `crates/rela-protocol/src/lib.rs`，前端镜像位于 `src/types.ts`。此版本独立于 EasyTier RPC 协议。
 
 ## Frontend → Native
 
@@ -23,9 +23,13 @@ Tauri 业务接口版本 `3`；JSON 字段使用 `snake_case`。Rust 定义位�
 
 ### 网络配置
 
-View 包含 `network_name`、`has_network_secret`、`peers: string[]`、`private_mode`、`disable_p2p`、`gateway_ip: string | null`。
+View 包含 `network_name`、`has_credential`、`peers: string[]`、`private_mode`、`disable_p2p`、`gateway_ip: string | null`。
 
-Update 使用相同配置字段，但把 `has_network_secret` 换成可选 `network_secret`。省略或 null 保留原密钥；传入空字符串会被拒绝。前端仅在用户输入时短暂持有新密钥，保存后清空。节点必须是合法的 tcp / udp / quic / ws / wss 地址，不能含用户信息、查询参数或片段。网关可留空，否则须为 IPv4。
+Update 使用相同配置字段，但把 `has_credential` 换成可选 `credential_secret`。省略或 null 保留同网络的原凭据；空字符串清除；非空值必须为 Base64 编码的 32 字节 credential，首尾空白会被去除。网络名改变时必须显式更换或清除凭据，不自动跨网络复用。前端仅在用户输入时短暂持有新凭据，保存后清空。
+
+允许保存尚未导入凭据的公共配置；连接、重连和 helper 都要求存在有效格式的凭据。恢复默认会清除凭据。旧版 network_secret 不再接受为 Update 字段；旧存储只读取公共字段，重新导入并保存后覆盖。服务器授权状态仍由握手决定，不能仅凭格式校验判定有效期和撤销状态。
+
+节点必须是合法的 tcp / udp / quic / ws / wss 地址，不能含用户信息、查询参数或片段。网关可留空，否则须为 IPv4。
 
 ### 连接状态
 
@@ -63,5 +67,9 @@ Tauri Result 的错误分支以 `{ code, message }` rejection 返回。常见错
 ## Native → Core
 
 SCM 管理固定服务 `RelaEasyTier`；官方 CLI 用 `--instance-name rela --output json` 查询 `127.0.0.1:35888` 的 node / connector / route。CLI 返回值转换为上述业务模型。命令执行有输出上限和超时，不将 Core 的完整配置返回前端。
+
+Core 固定为 `2.7.0-0a783c8e`。TOML 使用 Secure Mode 的 credential 私钥与推导公钥，无 `network_secret` 或 `peer_public_key`；凭据不进入服务启动参数。实例 ID 保持 `5f9e7c9b-747a-47e5-b62b-3c2b607c312e`。
+
+2.7 CLI 的 connector JSON 省略默认的 `status=0`，断开/连接中状态为 `DISCONNECTED`/`CONNECTING`。Native 仅在存在非空 URL、状态为省略/0/CONNECTED 时认定节点已连接；未知枚举不算连接，缺少 URL 的对象视为无效响应。无 IPv4 的 node 可省略 ipv4_addr，按等待分配处理。
 
 服务操作串行执行。连接已运行的服务为幂等操作，不主动覆盖运行配置；应用新配置应使用重连。首次连接为手动启动服务，关闭 GUI 不会停止服务。

@@ -78,7 +78,30 @@ export function NetworkSettings({
       setConfig(next);
       setSecret('');
       setPeers(next.peers.join('\n'));
-      setMessage('已恢复默认设置，下次连接时生效。');
+      setMessage('已恢复默认设置，请导入 credential 后连接。');
+      onSaved();
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function clearCredential() {
+    if (!config || busy || active) return;
+    setBusy(true);
+    setMessage(null);
+    setFailed(false);
+    try {
+      const next = await service.saveNetworkConfig({
+        ...networkConfigUpdate(config, '', peers),
+        credential_secret: '',
+      });
+      setSecret('');
+      setConfig(next);
+      setPeers(next.peers.join('\n'));
+      setMessage('已清除本地凭据，重新导入后才能连接。');
       onSaved();
     } catch (error) {
       setMessage(errorMessage(error));
@@ -112,25 +135,41 @@ export function NetworkSettings({
               setConfig({ ...config, network_name: event.target.value })
             }
           />
-          <label className="field-label" htmlFor="network-secret">
-            网络密钥
+          <label className="field-label" htmlFor="credential-secret">
+            credential 凭据
           </label>
           <input
-            id="network-secret"
+            id="credential-secret"
             className="text-input"
             type="password"
             value={secret}
             autoComplete="new-password"
             placeholder={
-              config.has_network_secret
+              config.has_credential
                 ? '已保存，留空保持不变'
-                : '请输入网络密钥'
+                : '粘贴管理员签发的 credential'
             }
-            required={!config.has_network_secret}
-            maxLength={1024}
+            maxLength={128}
+            spellCheck={false}
             disabled={busy}
             onChange={(event) => setSecret(event.target.value)}
           />
+          <p className="field-hint">
+            {config.has_credential
+              ? '凭据已保存，填写新值可更换。'
+              : '尚未导入凭据，暂时无法连接。'}
+          </p>
+          {config.has_credential && (
+            <button
+              className="text-button"
+              type="button"
+              disabled={busy || active}
+              title={active ? '请先断开连接再清除凭据' : undefined}
+              onClick={() => void clearCredential()}
+            >
+              清除凭据
+            </button>
+          )}
           <label className="field-label" htmlFor="network-peers">
             连接节点
           </label>

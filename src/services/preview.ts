@@ -9,7 +9,7 @@ import { networkConfigUpdate } from './network-config';
 
 const defaultNetwork = (): NetworkConfig => ({
   network_name: 'lab201',
-  has_network_secret: true,
+  has_credential: true,
   peers: ['tcp://47.93.55.228:12010'],
   private_mode: true,
   disable_p2p: true,
@@ -96,6 +96,8 @@ export function createPreviewService(
       return status();
     },
     async connect() {
+      if (!network.has_credential)
+        throw new Error('请先在设置中导入此网络的 credential。');
       connected = true;
       return status();
     },
@@ -104,6 +106,8 @@ export function createPreviewService(
       return status();
     },
     async reconnect() {
+      if (!network.has_credential)
+        throw new Error('请先在设置中导入此网络的 credential。');
       connected = true;
       return status();
     },
@@ -177,9 +181,9 @@ export function createPreviewService(
     async getVersion() {
       return {
         app: '0.1.0',
-        easytier_target: '2.6.4',
+        easytier_target: '2.7.0-0a783c8e',
         easytier_installed: null,
-        protocol: 3,
+        protocol: 4,
       };
     },
     async getPreferences() {
@@ -189,17 +193,27 @@ export function createPreviewService(
       return structuredClone(network);
     },
     async saveNetworkConfig(update) {
+      if (
+        network.network_name !== update.network_name.trim() &&
+        network.has_credential &&
+        update.credential_secret === undefined
+      )
+        throw new Error(
+          '更换网络时请同时导入新网络的 credential，或先清除原凭据。',
+        );
       const candidate = { ...network, ...update };
       networkConfigUpdate(
         candidate,
-        update.network_secret ?? '',
+        update.credential_secret ?? '',
         update.peers.join('\n'),
       );
       // 演示只记录“已设置”，不持久化输入的密钥。
       const next: NetworkConfig = {
         network_name: update.network_name.trim(),
-        has_network_secret:
-          !!update.network_secret || network.has_network_secret,
+        has_credential:
+          update.credential_secret === undefined
+            ? network.has_credential
+            : !!update.credential_secret.trim(),
         peers: [...new Set(update.peers.map((peer) => peer.trim()))],
         private_mode: update.private_mode,
         disable_p2p: update.disable_p2p,
@@ -210,7 +224,7 @@ export function createPreviewService(
       return structuredClone(next);
     },
     async resetNetworkConfig() {
-      const next = defaultNetwork();
+      const next = { ...defaultNetwork(), has_credential: false };
       storage?.setItem('rela.preview.network', JSON.stringify(next));
       network = next;
       return structuredClone(next);
@@ -233,12 +247,13 @@ function isNetworkConfig(value: unknown): value is NetworkConfig {
   const entry = value as Record<string, unknown>;
   if (
     typeof entry.network_name !== 'string' ||
-    typeof entry.has_network_secret !== 'boolean' ||
+    typeof entry.has_credential !== 'boolean' ||
     typeof entry.private_mode !== 'boolean' ||
     typeof entry.disable_p2p !== 'boolean' ||
     !Array.isArray(entry.peers) ||
     !entry.peers.every((peer) => typeof peer === 'string') ||
     !(entry.gateway_ip === null || typeof entry.gateway_ip === 'string') ||
+    'credential_secret' in entry ||
     'network_secret' in entry
   )
     return false;

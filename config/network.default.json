@@ -1,6 +1,5 @@
 {
   "network_name": "lab201",
-  "network_secret": "",
   "peers": ["tcp://47.93.55.228:12010"],
   "private_mode": true,
   "disable_p2p": true,

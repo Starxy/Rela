@@ -42,11 +42,11 @@ describe('桌面权限边界', () => {
     };
     vi.mocked(invoke).mockResolvedValue({
       ...config,
-      has_network_secret: true,
+      has_credential: true,
     });
     await desktopService.saveNetworkConfig(config);
     expect(invoke).toHaveBeenCalledWith('save_network_config', { config });
-    expect(config).not.toHaveProperty('network_secret');
+    expect(config).not.toHaveProperty('credential_secret');
   });
 
   it('发布产物在普通浏览器中不默认进入演示', async () => {

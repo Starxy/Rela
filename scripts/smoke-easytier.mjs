@@ -136,7 +136,7 @@ try {
   );
   await until(async () =>
     (await query(clientRpc, 'rela-smoke-client', 'connector')).some(
-      (item) => item.status === 0,
+      (item) => !!item.url?.url && (item.status ?? 0) === 0,
     ),
   );
   const node = await query(clientRpc, 'rela-smoke-client', 'node');
@@ -170,7 +170,7 @@ try {
   await delay(1500);
   assert.ok(
     (await query(mismatchRpc, 'rela-smoke-mismatch', 'connector')).every(
-      (item) => item.status !== 0,
+      (item) => (item.status ?? 0) !== 0,
     ),
   );
   console.log(

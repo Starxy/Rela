@@ -5,13 +5,58 @@ use std::net::Ipv4Addr;
 /// Deliberately ignore NodeInfo.config, which contains credentials.
 #[derive(Deserialize)]
 pub struct NodeInfo {
+    #[serde(default)]
     pub ipv4_addr: String,
     pub inst_id: String,
 }
 
 #[derive(Deserialize)]
+#[serde(try_from = "ConnectorPayload")]
 pub struct Connector {
     pub status: i32,
+}
+
+#[derive(Deserialize)]
+struct ConnectorPayload {
+    url: ConnectorUrl,
+    // 2.7.0 CLI uses protobuf JSON: Connected = 0 is omitted.
+    #[serde(default)]
+    status: ConnectorStatus,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConnectorStatus {
+    Number(i32),
+    Name(String),
+}
+
+impl Default for ConnectorStatus {
+    fn default() -> Self {
+        Self::Number(0)
+    }
+}
+
+#[derive(Deserialize)]
+struct ConnectorUrl {
+    url: String,
+}
+
+impl TryFrom<ConnectorPayload> for Connector {
+    type Error = &'static str;
+
+    fn try_from(value: ConnectorPayload) -> Result<Self, Self::Error> {
+        if value.url.url.is_empty() {
+            return Err("connector URL is missing");
+        }
+        let connected = match value.status {
+            ConnectorStatus::Number(number) => number == 0,
+            ConnectorStatus::Name(name) => name == "CONNECTED",
+        };
+        Ok(Self {
+            status: if connected { 0 } else { 1 },
+        })
+    }
 }
 
 #[derive(Deserialize)]
@@ -99,6 +144,28 @@ fn contains_ip(cidr: &str, target: Ipv4Addr) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn protobuf_json_omits_connected_status_but_invalid_rows_are_rejected() {
+        let connected: Connector =
+            serde_json::from_str(r#"{"url":{"url":"tcp://127.0.0.1:11010"}}"#).unwrap();
+        assert_eq!(connected.status, 0);
+        let pending: Connector =
+            serde_json::from_str(r#"{"url":{"url":"tcp://127.0.0.1:11010"},"status":1}"#).unwrap();
+        assert_eq!(pending.status, 1);
+        let disconnected: Connector = serde_json::from_str(
+            r#"{"url":{"url":"tcp://127.0.0.1:11010"},"status":"DISCONNECTED"}"#,
+        )
+        .unwrap();
+        assert_eq!(disconnected.status, 1);
+        let connected_named: Connector =
+            serde_json::from_str(r#"{"url":{"url":"tcp://127.0.0.1:11010"},"status":"CONNECTED"}"#)
+                .unwrap();
+        assert_eq!(connected_named.status, 0);
+        assert!(serde_json::from_str::<Connector>("{}").is_err());
+        assert!(serde_json::from_str::<Connector>(r#"{"url":{"url":""}}"#).is_err());
+        let starting: NodeInfo = serde_json::from_str(r#"{"inst_id":"test"}"#).unwrap();
+        assert!(!connection_snapshot(&starting, &[connected], true).connected);
+    }
     #[test]
     fn core_and_ip_alone_do_not_prove_connectivity() {
         let node = NodeInfo {

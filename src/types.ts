@@ -48,7 +48,7 @@ export interface VersionInfo {
 
 export interface NetworkConfig {
   network_name: string;
-  has_network_secret: boolean;
+  has_credential: boolean;
   peers: string[];
   private_mode: boolean;
   disable_p2p: boolean;
@@ -57,7 +57,7 @@ export interface NetworkConfig {
 
 export interface NetworkConfigUpdate {
   network_name: string;
-  network_secret?: string;
+  credential_secret?: string;
   peers: string[];
   private_mode: boolean;
   disable_p2p: boolean;

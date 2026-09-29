@@ -1,8 +1,8 @@
 //! Rela 前端与 Rust 后端之间的业务模型。不包含网络参数或设备凭据。
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 3;
-pub const EASYTIER_TARGET_VERSION: &str = "2.6.4";
+pub const PROTOCOL_VERSION: u32 = 4;
+pub const EASYTIER_TARGET_VERSION: &str = "2.7.0-0a783c8e";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -151,7 +151,7 @@ pub struct VersionInfo {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NetworkConfigView {
     pub network_name: String,
-    pub has_network_secret: bool,
+    pub has_credential: bool,
     pub peers: Vec<String>,
     pub private_mode: bool,
     pub disable_p2p: bool,
@@ -162,8 +162,8 @@ pub struct NetworkConfigView {
 #[serde(deny_unknown_fields)]
 pub struct NetworkConfigUpdate {
     pub network_name: String,
-    /// None 保留已保存的密钥；Some 必须是有效的非空密钥。
-    pub network_secret: Option<String>,
+    /// None 保留同网络的已存凭据；空字符串清除；非空值导入新凭据。
+    pub credential_secret: Option<String>,
     pub peers: Vec<String>,
     pub private_mode: bool,
     pub disable_p2p: bool,

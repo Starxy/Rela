@@ -1,12 +1,12 @@
 # Third-party runtime notices
 
-Rela currently packages unmodified files from the official EasyTier 2.6.4 Windows x64 release. The archive SHA-256 and individual binary hashes are recorded by scripts/prepare-easytier.mjs. This is an internal development package, not a cleared public release.
+Rela currently packages unmodified files from the official EasyTier 2.7.0-0a783c8e Windows x64 development build. The archive SHA-256 and individual binary hashes are pinned in config/easytier-version.json. This is an internal development package, not a cleared public release.
 
 ## EasyTier Core and CLI
 
-Source and release: https://github.com/EasyTier/EasyTier/tree/v2.6.4
+Source and release: https://github.com/EasyTier/EasyTier/tree/0a783c8e04561d1fee4e3e922e9576402d5bfea3
 
-Copyright belongs to the EasyTier contributors. The upstream project supplies the GNU Lesser General Public License version 3. The LGPL and GPL texts are included in third-party-licenses. Source corresponding to the pinned release is available at https://github.com/EasyTier/EasyTier/archive/refs/tags/v2.6.4.tar.gz . No EasyTier source modifications are made by this project. Distribution must preserve applicable notices and corresponding-source obligations.
+Copyright belongs to the EasyTier contributors. The upstream project supplies the GNU Lesser General Public License version 3. The LGPL and GPL texts are included in third-party-licenses. Source corresponding to the pinned build is available at https://github.com/EasyTier/EasyTier/archive/0a783c8e04561d1fee4e3e922e9576402d5bfea3.tar.gz . No EasyTier source modifications are made by this project. Distribution must preserve applicable notices and corresponding-source obligations.
 
 ## Wintun 0.14.1
 

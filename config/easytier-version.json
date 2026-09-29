@@ -1,0 +1,16 @@
+{
+  "version": "2.7.0-0a783c8e",
+  "channel": "development",
+  "commit": "0a783c8e04561d1fee4e3e922e9576402d5bfea3",
+  "source": "https://github.com/EasyTier/EasyTier/actions/runs/35748842247",
+  "artifact_url": "https://api.github.com/repos/EasyTier/EasyTier/actions/artifacts/10706647411/zip",
+  "artifact_expires_at": "2026-12-21T15:39:03Z",
+  "archive_sha256": "16c96b7382922940e63fa9ab815d472eea1dd56931d2aaff0ff15d4f4c92dcbb",
+  "files": {
+    "easytier-core.exe": "ab8d750212cd17b22cfa547af1059592747172a9a02315858568c1e46ee78db4",
+    "easytier-cli.exe": "ceb737ffb3d0f78c283d80a4a03982af7eff8b324de24d118ce6371508df8e12",
+    "wintun.dll": "e5da8447dc2c320edc0fc52fa01885c103de8c118481f683643cacc3220dafce",
+    "Packet.dll": "c7c03a87eac7243ccbe331554624b18803010b740e311fc8cfddb573096eacac",
+    "WinDivert64.sys": "8da085332782708d8767bcace5327a6ec7283c17cfb85e40b03cd2323a90ddc2"
+  }
+}

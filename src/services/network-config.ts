@@ -6,6 +6,7 @@ export function networkConfigUpdate(
   peerText: string,
 ): NetworkConfigUpdate {
   const network_name = config.network_name.trim();
+  secret = secret.trim();
   const peers = [
     ...new Set(
       peerText
@@ -20,10 +21,8 @@ export function networkConfigUpdate(
     /[\r\n\t]/.test(network_name)
   )
     throw new Error('请填写 1–128 个字符的网络名称。');
-  if (!secret && !config.has_network_secret)
-    throw new Error('请输入网络密钥。');
-  if (new TextEncoder().encode(secret).length > 1024 || /[\r\n\t]/.test(secret))
-    throw new Error('网络密钥过长或包含控制字符。');
+  if (secret && !/^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw048]=$/.test(secret))
+    throw new Error('credential 格式无效，请粘贴管理员签发的 Base64 凭据。');
   if (!peers.length || peers.length > 16)
     throw new Error('请填写 1–16 个连接节点，每行一个。');
   for (const peer of peers) {
@@ -55,7 +54,7 @@ export function networkConfigUpdate(
     throw new Error('校园网关地址无效。');
   return {
     network_name,
-    ...(secret ? { network_secret: secret } : {}),
+    ...(secret ? { credential_secret: secret } : {}),
     peers,
     private_mode: config.private_mode,
     disable_p2p: config.disable_p2p,

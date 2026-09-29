@@ -1,15 +1,15 @@
 # Rela
 
-面向实验室成员的 Windows 网络客户端。React + TypeScript 提供 400 × 560 的连接界面，Tauri / Rust 直接管理 EasyTier Core 2.6.4 Windows 服务。
+面向实验室成员的 Windows 网络客户端。React + TypeScript 提供 400 × 560 的连接界面，Tauri / Rust 直接管理 EasyTier Core `2.7.0-0a783c8e` 开发版 Windows 服务。
 
 ## 当前功能
 
 - 内置构建时网络配置，默认网络为 `lab201`、节点为 `tcp://47.93.55.228:12010`，默认启用 `private_mode` 和 `disable_p2p`。
-- 设置界面可修改网络名称、密钥、连接节点和两个开关，支持恢复默认和保存后重连。
+- 设置界面可修改网络名称、credential 凭据、连接节点和两个开关，支持更换/清除凭据、恢复默认和保存后重连。
 - 使用专用 `RelaEasyTier` 服务连接、断开和重连。GUI 保持普通权限，服务变更由同一程序的一次性提权入口执行。目前每次连接控制都需要 UAC 授权。
 - 通过官方 CLI 查询本机 RPC，并核对虚拟网卡地址。只有 Core、节点连接和 TUN 都就绪才显示已连接。
 - 可选校园网关 IPv4 检测、实时诊断和不含密钥的摘要导出。
-- 修改后的配置使用当前 Windows 用户的 DPAPI 加密保存；已保存密钥不回显至前端。
+- credential 使用当前 Windows 用户的 DPAPI 加密保存；运行时通过管理员受保护的 TOML 交给 Core，启用 Secure Mode，不传入网络主密码或 `peer_public_key`。已保存凭据不回显至前端，也不进入进程/服务启动参数。
 - 最小化或关闭窗口时隐藏到系统托盘；点击托盘图标恢复，右键菜单可打开或退出 Rela。
 - 提供安装版和 Portable ZIP 免安装版；便携版设置与界面缓存保存在解压目录。
 
@@ -24,15 +24,17 @@ npm ci
 npm run desktop:dev
 ```
 
-首次运行会从官方发布页下载固定版本 Core，并核对 SHA-256。`desktop:dev` 会自行启动前端服务，请先停止占用 1420 端口的其他开发服务。仅看界面可运行 `npm run dev`。
+首次运行会从官方 Actions 下载固定开发版 Core，并核对 ZIP 及文件的 SHA-256，需要安装并登录 GitHub CLI。产物保留期限和离线构建方法见 [引擎资产说明](src-tauri/binaries/README.md)。`desktop:dev` 会自行启动前端服务，请先停止占用 1420 端口的其他开发服务。仅看界面可运行 `npm run dev`。
 
-### 构建默认网络
+### 网络配置与凭据
 
-`config/network.default.json` 提交公共默认值，不包含真实密钥。开发者可以将它复制为被 Git 忽略的 `config/network.local.json`，填写完整配置。构建时优先使用本地文件；环境变量 `RELA_NETWORK_SECRET` 可覆盖其中的密钥。
+`config/network.default.json` 只提供公共默认值。构建脚本不读取 `network.local.json`、`credential.local.dat` 或 `RELA_NETWORK_SECRET`，debug 和 release 均不嵌入真实凭据。远程 GitHub 资源清单仍待开发。
 
-`lab201` 使用 credential 接入，当前客户端的认证实现仍只支持 `network_secret`，需按 [待办](todo.md) 完成 Secure Mode 改造后才能连接。准备中的 credential 可保存在 Git 忽略的 `config/credential.local.dat`，由当前 Windows 用户的 DPAPI 加密；当前程序和构建脚本尚不读取此文件，不要将 credential 填入 `network_secret`。
+首次使用在设置中粘贴管理员为该网络签发的 credential（32 字节密钥的 Base64 表示）。留空保留同网络已存凭据；更换网络必须同时更换或清除凭据。清除入口需先断开连接；恢复默认会清除用户保存的凭据。未导入有效格式的凭据时，后端拒绝启动连接。
 
-发布构建要求提供非空密钥。不要把真实密钥填回默认文件或命令示例。构建默认值只嵌入 Native 程序，不写入前端静态文件。任何拿到安装包的人仍可提取共享密钥，这符合当前共享网络方案，不能当作设备独立凭据。
+旧版 `network.dat` 只读取公共字段，不会把 `network_secret` 作为 credential 或回退密码认证；用户重新导入并保存后覆盖旧文件。服务配置在下次连接/重连时更新。凭据到期或被撤销需向管理员重新申请，格式校验无法判定服务器授权状态。
+
+开发者可使用 `cargo build --example credential-tool`，再执行 `target/debug/examples/credential-tool.exe import config/credential.local.dat <用户配置目录>/network.dat` 导入此前保存的 DPAPI 记录。该记录包含 network_name、peers、credential_secret，只能由原 Windows 用户解密；此工具不参与发布包，也不在构建时自动执行。
 
 ```powershell
 npm run desktop:build
@@ -48,7 +50,7 @@ npm run desktop:portable
 
 输出为 `target/release/bundle/portable/Rela_0.1.0_x64-portable.zip`，同时生成 ZIP 的 SHA-256 文件。完整解压到有写入权限的本地 NTFS 文件夹，双击 `Rela.exe` 即可。需要已安装 [Microsoft WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。包内含 Core、运行库、许可、使用说明和服务清理工具。
 
-同目录的 `portable.txt` 启用便携模式：设置存入 `data/config`、诊断存入 `data/logs`、WebView2 缓存存入 `data/webview`。移动前退出所有 Rela 界面。已保存网络密钥绑定当前 Windows 用户，换电脑或用户后须恢复默认或重新填写配置。
+同目录的 `portable.txt` 启用便携模式：设置存入 `data/config`、诊断存入 `data/logs`、WebView2 缓存存入 `data/webview`。移动前退出所有 Rela 界面。已保存凭据绑定当前 Windows 用户，换电脑或用户后须恢复默认并重新导入凭据。
 
 Portable 省去界面安装步骤，首次连接仍需 UAC 授权并创建 `RelaEasyTier` 服务及 `%ProgramData%/Rela`。该服务与安装版共享，退出界面仍保持连接。移除前退出所有 Rela，以管理员身份运行包内 `Remove-Network-Service.cmd`，输入 `REMOVE` 后清理服务及其数据，再删除解压目录。共享网络驱动、系统 WebView2 和安装版用户配置会保留。
 
@@ -62,9 +64,12 @@ npm run format:check
 npm run prepare:core   # cargo 检查前先准备固定版本资产
 npm run check:rust     # Rust 格式、Clippy、测试
 npm run smoke:core     # 两个仅本机通信的 Core；不创建 TUN、不连接外部网络
+npm run test:credential # 隔离 Secure Mode、TOML 认证与错误凭据拒绝
 ```
 
 CI 使用不带真实密钥的 debug 构建，不连接实验室网络。生产前端默认只接受 Tauri 运行环境；浏览器生产演示须显式设置 `VITE_RELA_PREVIEW=true`。
+
+手动验证现网：先构建 `credential-tool`，再运行 `node scripts/check-live-credential.mjs`。此操作读取本地 DPAPI 凭据并连接记录中的节点，使用 Rela 的 TOML 生成代码，关闭 TUN，验证后清理临时明文文件和进程。测试范围及结果见 [兼容性验证](docs/easytier-credential-compat.md)。
 
 ## 运行与数据
 
