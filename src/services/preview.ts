@@ -8,9 +8,9 @@ import type {
 import { networkConfigUpdate } from './network-config';
 
 const defaultNetwork = (): NetworkConfig => ({
-  network_name: 'starxy',
+  network_name: 'lab201',
   has_network_secret: true,
-  peers: ['tcp://47.93.55.228:11010'],
+  peers: ['tcp://47.93.55.228:12010'],
   private_mode: true,
   disable_p2p: true,
   gateway_ip: null,

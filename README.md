@@ -4,7 +4,7 @@
 
 ## 当前功能
 
-- 内置构建时网络配置，默认网络为 `starxy`、节点为 `tcp://47.93.55.228:11010`，默认启用 `private_mode` 和 `disable_p2p`。
+- 内置构建时网络配置，默认网络为 `lab201`、节点为 `tcp://47.93.55.228:12010`，默认启用 `private_mode` 和 `disable_p2p`。
 - 设置界面可修改网络名称、密钥、连接节点和两个开关，支持恢复默认和保存后重连。
 - 使用专用 `RelaEasyTier` 服务连接、断开和重连。GUI 保持普通权限，服务变更由同一程序的一次性提权入口执行。目前每次连接控制都需要 UAC 授权。
 - 通过官方 CLI 查询本机 RPC，并核对虚拟网卡地址。只有 Core、节点连接和 TUN 都就绪才显示已连接。
@@ -29,6 +29,8 @@ npm run desktop:dev
 ### 构建默认网络
 
 `config/network.default.json` 提交公共默认值，不包含真实密钥。开发者可以将它复制为被 Git 忽略的 `config/network.local.json`，填写完整配置。构建时优先使用本地文件；环境变量 `RELA_NETWORK_SECRET` 可覆盖其中的密钥。
+
+`lab201` 使用 credential 接入，当前客户端的认证实现仍只支持 `network_secret`，需按 [待办](todo.md) 完成 Secure Mode 改造后才能连接。准备中的 credential 可保存在 Git 忽略的 `config/credential.local.dat`，由当前 Windows 用户的 DPAPI 加密；当前程序和构建脚本尚不读取此文件，不要将 credential 填入 `network_secret`。
 
 发布构建要求提供非空密钥。不要把真实密钥填回默认文件或命令示例。构建默认值只嵌入 Native 程序，不写入前端静态文件。任何拿到安装包的人仍可提取共享密钥，这符合当前共享网络方案，不能当作设备独立凭据。
 

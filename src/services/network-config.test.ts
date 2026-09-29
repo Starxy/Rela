@@ -4,7 +4,7 @@ import { createPreviewService } from './preview';
 import { coreIsActive, type NetworkConfig } from '../types';
 
 const config: NetworkConfig = {
-  network_name: 'starxy',
+  network_name: 'lab201',
   has_network_secret: true,
   peers: ['tcp://localhost:11010'],
   private_mode: true,
@@ -72,7 +72,7 @@ describe('网络配置', () => {
       updated,
     );
     expect(await service.resetNetworkConfig()).toMatchObject({
-      network_name: 'starxy',
+      network_name: 'lab201',
       private_mode: true,
       disable_p2p: true,
     });
