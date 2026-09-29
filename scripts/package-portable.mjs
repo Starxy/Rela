@@ -3,7 +3,6 @@ import { execFileSync } from 'node:child_process';
 import { createReadStream } from 'node:fs';
 import {
   copyFile,
-  cp,
   mkdir,
   mkdtemp,
   readFile,
@@ -14,6 +13,12 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { nsisPayload } from './lib/bundle-payload.mjs';
+import {
+  assertResourceMap,
+  engineNames,
+  licenseNames,
+} from './lib/release-layout.mjs';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 if (process.platform !== 'win32' || process.arch !== 'x64') {
@@ -29,6 +34,7 @@ const config = JSON.parse(
   await readFile(path.join(root, 'src-tauri/tauri.conf.json'), 'utf8'),
 );
 const target = path.resolve(root, process.env.CARGO_TARGET_DIR || 'target');
+assertResourceMap(config);
 const output = path.join(target, profile, 'bundle', 'portable');
 const name = `Rela_${config.version}_x64-portable${debug ? '-debug' : ''}`;
 await mkdir(output, { recursive: true });
@@ -56,23 +62,44 @@ async function listFiles(directory, relative = '') {
   return files.sort();
 }
 
+function createZip(source, archive) {
+  execFileSync(
+    path.join(
+      process.env.SystemRoot,
+      'System32/WindowsPowerShell/v1.0/powershell.exe',
+    ),
+    [
+      '-NoProfile',
+      '-NonInteractive',
+      '-ExecutionPolicy',
+      'Bypass',
+      '-File',
+      path.join(root, 'scripts/create-portable-zip.ps1'),
+      '-SourcePath',
+      source,
+      '-ArchivePath',
+      archive,
+    ],
+    { windowsHide: true, stdio: 'pipe' },
+  );
+}
+
 try {
   const engine = path.join(root, 'src-tauri/binaries/easytier');
   const manifest = JSON.parse(
     await readFile(path.join(engine, 'manifest.json'), 'utf8'),
   );
-  const required = [
-    'easytier-core.exe',
-    'easytier-cli.exe',
-    'wintun.dll',
-    'Packet.dll',
-    'WinDivert64.sys',
-  ];
+  const required = engineNames;
   await mkdir(path.join(directory, 'easytier'), { recursive: true });
-  await copyFile(
-    path.join(target, profile, 'rela.exe'),
-    path.join(directory, 'Rela.exe'),
+  const payload = nsisPayload(
+    await readFile(path.join(target, profile, 'rela.exe')),
   );
+  // Keep the Cargo output untouched, just as Tauri restores it after bundling.
+  // This canonical copy is also the exact-byte reference for all package scans.
+  const payloadDirectory = path.join(target, profile, 'bundle/payload');
+  await mkdir(payloadDirectory, { recursive: true });
+  await writeFile(path.join(payloadDirectory, 'Rela.exe'), payload);
+  await writeFile(path.join(directory, 'Rela.exe'), payload);
   for (const file of required) {
     if ((await digest(path.join(engine, file))) !== manifest.files[file]) {
       throw new Error(`引擎校验失败：${file}。请先运行 npm run prepare:core。`);
@@ -90,11 +117,13 @@ try {
     path.join(root, 'THIRD-PARTY-NOTICES.md'),
     path.join(directory, 'THIRD-PARTY-NOTICES.md'),
   );
-  await cp(
-    path.join(root, 'third-party-licenses'),
-    path.join(directory, 'third-party-licenses'),
-    { recursive: true },
-  );
+  await mkdir(path.join(directory, 'third-party-licenses'));
+  for (const file of licenseNames) {
+    await copyFile(
+      path.join(root, 'third-party-licenses', file),
+      path.join(directory, 'third-party-licenses', file),
+    );
+  }
   for (const file of [
     'README.txt',
     'portable.txt',
@@ -117,31 +146,49 @@ try {
     JSON.stringify({ version: config.version, profile, files }, null, 2) + '\n',
   );
   const temporaryZip = path.join(staging, `${name}.zip`);
-  execFileSync(
-    path.join(
-      process.env.SystemRoot,
-      'System32/WindowsPowerShell/v1.0/powershell.exe',
-    ),
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-ExecutionPolicy',
-      'Bypass',
-      '-File',
-      path.join(root, 'scripts/create-portable-zip.ps1'),
-      '-SourcePath',
-      directory,
-      '-ArchivePath',
-      temporaryZip,
-    ],
-    { windowsHide: true, stdio: 'pipe' },
-  );
+  createZip(directory, temporaryZip);
   const zipHash = await digest(temporaryZip);
   const archive = path.join(output, `${name}.zip`);
   await rename(temporaryZip, archive);
   await writeFile(`${archive}.sha256`, `${zipHash}  ${name}.zip\n`);
   console.log(`Portable ZIP: ${archive}`);
   console.log(`SHA-256: ${zipHash}`);
+  // Updating preserves the destination's marker and data. Keep them out of this ZIP.
+  const updateName = `Rela_${config.version}_x64-update`;
+  const updateDirectory = path.join(staging, updateName);
+  if (
+    path.dirname(directory) !== staging ||
+    path.dirname(updateDirectory) !== staging
+  ) {
+    throw new Error('更新包暂存路径无效。');
+  }
+  await rm(path.join(directory, 'portable.txt'));
+  delete files['portable.txt'];
+  await writeFile(
+    path.join(directory, 'checksums.json'),
+    JSON.stringify(
+      {
+        schema_version: 1,
+        version: config.version,
+        target: 'windows-x86_64',
+        profile,
+        core_version: manifest.version,
+        engine_revision: manifest.engine_revision,
+        files,
+      },
+      null,
+      2,
+    ) + '\n',
+  );
+  await rename(directory, updateDirectory);
+  const updateFile = `${updateName}${debug ? '-debug' : ''}.zip`;
+  const updateTemp = path.join(staging, updateFile);
+  createZip(updateDirectory, updateTemp);
+  const updateHash = await digest(updateTemp);
+  const updateArchive = path.join(output, updateFile);
+  await rename(updateTemp, updateArchive);
+  await writeFile(`${updateArchive}.sha256`, `${updateHash}  ${updateFile}\n`);
+  console.log(`Portable update ZIP: ${updateArchive}`);
 } finally {
   const relative = path.relative(output, staging);
   if (relative.startsWith('.pack-') && !relative.includes(path.sep)) {

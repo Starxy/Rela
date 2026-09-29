@@ -461,6 +461,39 @@ dd {
   font-size: 11px;
   color: #8b968e;
 }
+.software-updates {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid var(--line);
+}
+.update-channel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 8px;
+  font-size: 12px;
+}
+.update-channel select {
+  font: inherit;
+  color: inherit;
+  padding: 6px 8px;
+  background: #fcfdfc;
+  border: 1px solid #dfe6df;
+  border-radius: 6px;
+}
+.software-updates > .button {
+  margin-top: 12px;
+}
+.update-candidate {
+  margin-top: 16px;
+  font-size: 12px;
+}
+.update-notes {
+  margin-top: 10px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .detail-list > div {
   display: flex;
   justify-content: space-between;
@@ -674,6 +707,26 @@ dd {
 .network-form .field-label {
   margin-top: 15px;
 }
+
+.config-sync {
+  padding: 12px;
+  margin-bottom: 16px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 10px;
+}
+
+.config-sync-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.config-sync-heading > span {
+  color: var(--text-secondary, #687386);
+  font-size: 11px;
+}
 .network-form > .field-label:first-child {
   margin-top: 0;
 }
@@ -851,4 +904,23 @@ dd {
     transition: none !important;
     animation: none !important;
   }
+}
+/* Software update confirmation stays in the settings flow. */
+.update-confirmation {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.update-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.update-progress {
+  margin-top: 12px;
+  font-size: 13px;
+}
+.update-progress progress {
+  width: 100%;
 }

@@ -4,6 +4,7 @@ import type {
   NetworkConfig,
   Preferences,
   RelaService,
+  SoftwareUpdateStatus,
 } from '../types';
 import { networkConfigUpdate } from './network-config';
 
@@ -55,7 +56,19 @@ export function createPreviewService(
   storage?: Pick<Storage, 'getItem' | 'setItem'>,
 ): RelaService {
   let connected = false;
+  let lastChecked: string | null = null;
   let network = defaultNetwork();
+  let localOverride = false;
+  let software: SoftwareUpdateStatus = {
+    channel: 'stable',
+    install_kind: 'installer',
+    current_version: '0.1.0',
+    checking: false,
+    last_checked: null,
+    last_error: null,
+    candidate: null,
+    cached: false,
+  };
   let preferences: Preferences = {
     device_name: '我的电脑',
     launch_at_login: false,
@@ -73,7 +86,21 @@ export function createPreviewService(
     const saved: unknown = JSON.parse(
       storage?.getItem('rela.preview.network') ?? 'null',
     );
-    if (isNetworkConfig(saved)) network = saved;
+    if (isNetworkConfig(saved)) {
+      network = {
+        network_name: saved.network_name,
+        has_credential: saved.has_credential,
+        peers: saved.peers,
+        private_mode: saved.private_mode,
+        disable_p2p: saved.disable_p2p,
+        gateway_ip: saved.gateway_ip,
+      };
+      const defaults = defaultNetwork();
+      localOverride =
+        ('local_override' in saved && saved.local_override === true) ||
+        saved.network_name !== defaults.network_name ||
+        JSON.stringify(saved.peers) !== JSON.stringify(defaults.peers);
+    }
   } catch {
     /* 损坏的演示配置使用默认值。 */
   }
@@ -92,6 +119,9 @@ export function createPreviewService(
 
   const service: RelaService = {
     mode: 'preview',
+    async completeStartup() {
+      return null;
+    },
     async getStatus() {
       return status();
     },
@@ -182,8 +212,12 @@ export function createPreviewService(
       return {
         app: '0.1.0',
         easytier_target: '2.7.0-0a783c8e',
-        easytier_installed: null,
-        protocol: 4,
+        easytier_bundled: null,
+        easytier_deployed: null,
+        easytier_running: null,
+        engine_owner_app: null,
+        engine_revision: null,
+        protocol: 8,
       };
     },
     async getPreferences() {
@@ -191,6 +225,36 @@ export function createPreviewService(
     },
     async getNetworkConfig() {
       return structuredClone(network);
+    },
+    async getResourceSync() {
+      return {
+        local_override: localOverride,
+        resource_version: 1,
+        applied_resource_version: connected ? 1 : null,
+        pending_reconnect: false,
+        configuration_ready: true,
+        credential_unavailable: false,
+        has_credential: network.has_credential,
+        refreshing: false,
+        last_checked: lastChecked,
+        last_error: null,
+      };
+    },
+    async refreshResources() {
+      const defaults = defaultNetwork();
+      const next = {
+        ...network,
+        network_name: defaults.network_name,
+        peers: defaults.peers,
+        has_credential:
+          network.network_name === defaults.network_name &&
+          network.has_credential,
+      };
+      storage?.setItem('rela.preview.network', JSON.stringify(next));
+      network = next;
+      localOverride = false;
+      lastChecked = new Date().toISOString();
+      return service.getResourceSync();
     },
     async saveNetworkConfig(update) {
       if (
@@ -219,15 +283,48 @@ export function createPreviewService(
         disable_p2p: update.disable_p2p,
         gateway_ip: update.gateway_ip?.trim() || null,
       };
-      storage?.setItem('rela.preview.network', JSON.stringify(next));
+      const defaults = defaultNetwork();
+      const override =
+        localOverride ||
+        next.network_name !== defaults.network_name ||
+        JSON.stringify(next.peers) !== JSON.stringify(defaults.peers);
+      storage?.setItem(
+        'rela.preview.network',
+        JSON.stringify({ ...next, local_override: override }),
+      );
       network = next;
+      localOverride = override;
       return structuredClone(next);
     },
     async resetNetworkConfig() {
       const next = { ...defaultNetwork(), has_credential: false };
       storage?.setItem('rela.preview.network', JSON.stringify(next));
       network = next;
+      localOverride = false;
       return structuredClone(next);
+    },
+    async getSoftwareUpdate() {
+      return structuredClone(software);
+    },
+    async checkSoftwareUpdate() {
+      software = { ...software, last_checked: new Date().toISOString() };
+      return structuredClone(software);
+    },
+    async setUpdateChannel(channel) {
+      software = { ...software, channel, last_checked: null, candidate: null };
+      return structuredClone(software);
+    },
+    async getUpdateProgress() {
+      return {
+        phase: 'idle',
+        version: null,
+        downloaded: 0,
+        total: 0,
+        error: null,
+      };
+    },
+    async installSoftwareUpdate() {
+      throw new Error('请在 Windows 桌面客户端中更新软件。');
     },
     async savePreferences(next) {
       const normalized = { ...next, device_name: next.device_name.trim() };

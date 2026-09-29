@@ -11,7 +11,7 @@ $fixture = Join-Path ([IO.Path]::GetTempPath()) ('rela-cleanup-' + [guid]::NewGu
 $programData = $fixture
 $root = Join-Path $fixture 'Rela'
 $serviceName = 'RelaEasyTier'
-$expectedBinary = Join-Path $root 'engine\easytier-core.exe'
+$expectedBinaries = @((Join-Path $root 'engine\easytier-core.exe'), (Join-Path $root 'engine-v2\easytier-core.exe'))
 [IO.Directory]::CreateDirectory((Join-Path $root 'engine')) | Out-Null
 [IO.File]::WriteAllText((Join-Path $root 'engine\probe.txt'), 'fixture')
 
@@ -25,8 +25,12 @@ try {
     Assert-SafeDirectory
     function Get-CimInstance { [pscustomobject]@{ PathName = '"C:\Other\easytier-core.exe" --service' } }
     Expect-Rejected { Get-RelaService } 'A foreign service path was accepted.'
-    function Get-CimInstance { [pscustomobject]@{ PathName = '"' + $expectedBinary + '" --service' } }
-    if (-not (Get-RelaService)) { throw 'Owned service not recognized.' }
+    foreach ($expected in $expectedBinaries) {
+        foreach ($script:testBinary in @($expected, ('\\?\' + $expected))) {
+            function Get-CimInstance { [pscustomobject]@{ PathName = '"' + $script:testBinary + '" --service' } }
+            if (-not (Get-RelaService)) { throw 'Owned service not recognized.' }
+        }
+    }
     # Substitute only the directory's metadata to exercise the reparse guard.
     function Get-Item {
         param([string]$LiteralPath, [switch]$Force)

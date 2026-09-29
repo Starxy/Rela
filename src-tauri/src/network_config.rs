@@ -29,13 +29,14 @@ fn invalid(message: &str) -> AppError {
 
 impl NetworkConfig {
     pub fn bundled() -> Result<Self, AppError> {
-        let mut config: Self = serde_json::from_str(include_str!(concat!(
-            env!("OUT_DIR"),
-            "/default-network.json"
-        )))
-        .map_err(|_| invalid("内置网络配置无效。"))?;
-        config.normalize_and_validate(false)?;
-        Ok(config)
+        Ok(Self {
+            network_name: String::new(),
+            credential_secret: String::new(),
+            peers: vec![],
+            private_mode: true,
+            disable_p2p: true,
+            gateway_ip: None,
+        })
     }
 
     pub fn view(&self) -> NetworkConfigView {
@@ -202,6 +203,14 @@ pub fn save(path: &Path, config: &NetworkConfig) -> Result<(), AppError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generic_defaults_cannot_connect_without_explicit_configuration() {
+        let mut config = NetworkConfig::bundled().unwrap();
+        assert!(config.network_name.is_empty() && config.peers.is_empty());
+        assert!(!config.view().has_credential);
+        assert!(config.normalize_and_validate(true).is_err());
+    }
 
     fn fixture() -> NetworkConfig {
         NetworkConfig {

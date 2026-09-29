@@ -1,15 +1,22 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { networkConfigUpdate } from '../services/network-config';
-import type { ConnectionStatus, NetworkConfig, RelaService } from '../types';
+import type {
+  ConnectionStatus,
+  NetworkConfig,
+  RelaService,
+  ResourceSyncStatus,
+} from '../types';
 import { coreIsActive, errorMessage } from '../types';
 
 export function NetworkSettings({
   service,
   status,
+  sync,
   onSaved,
 }: {
   service: RelaService;
   status: ConnectionStatus | null;
+  sync: ResourceSyncStatus | null;
   onSaved: () => void;
 }) {
   const [config, setConfig] = useState<NetworkConfig | null>(null);
@@ -19,8 +26,10 @@ export function NetworkSettings({
   const [message, setMessage] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
   const active = coreIsActive(status);
+  const dirty = useRef(false);
 
   useEffect(() => {
+    if (dirty.current) return;
     let mounted = true;
     service
       .getNetworkConfig()
@@ -39,7 +48,7 @@ export function NetworkSettings({
     return () => {
       mounted = false;
     };
-  }, [service]);
+  }, [service, sync?.resource_version, sync?.has_credential]);
 
   async function save(reconnect: boolean) {
     if (!config || busy) return;
@@ -50,6 +59,7 @@ export function NetworkSettings({
       const next = await service.saveNetworkConfig(
         networkConfigUpdate(config, secret, peers),
       );
+      dirty.current = false;
       setSecret('');
       setConfig(next);
       setPeers(next.peers.join('\n'));
@@ -75,6 +85,7 @@ export function NetworkSettings({
     setFailed(false);
     try {
       const next = await service.resetNetworkConfig();
+      dirty.current = false;
       setConfig(next);
       setSecret('');
       setPeers(next.peers.join('\n'));
@@ -98,6 +109,7 @@ export function NetworkSettings({
         ...networkConfigUpdate(config, '', peers),
         credential_secret: '',
       });
+      dirty.current = false;
       setSecret('');
       setConfig(next);
       setPeers(next.peers.join('\n'));
@@ -111,11 +123,75 @@ export function NetworkSettings({
     }
   }
 
+  async function refreshOnline() {
+    if (busy || sync?.refreshing) return;
+    setBusy(true);
+    setFailed(false);
+    setMessage(null);
+    try {
+      const updated = await service.refreshResources();
+      const next = await service.getNetworkConfig();
+      dirty.current = false;
+      setConfig(next);
+      setPeers(next.peers.join('\n'));
+      setSecret('');
+      setMessage(
+        updated.pending_reconnect
+          ? '线上配置已更新，重新连接后使用新线路。'
+          : '线上配置已更新，已恢复自动刷新。',
+      );
+      onSaved();
+    } catch (error) {
+      setMessage(errorMessage(error));
+      setFailed(true);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <>
+      <div className="config-sync">
+        <div className="config-sync-heading">
+          <strong>
+            {sync?.local_override ? '使用本地线路' : '使用线上默认配置'}
+          </strong>
+          <span>
+            {sync?.resource_version != null
+              ? `资源版本 ${sync.resource_version}`
+              : '等待获取'}
+          </span>
+        </div>
+        <p className="field-hint">
+          {sync?.local_override
+            ? '自动获取已暂停。手动更新会覆盖网络名称、节点和资源。'
+            : '启动时自动获取网络与资源，本机开关保持不变。'}
+        </p>
+        <button
+          className="button"
+          type="button"
+          disabled={busy || sync?.refreshing}
+          onClick={() => void refreshOnline()}
+        >
+          {sync?.refreshing ? '正在获取…' : '更新线上配置'}
+        </button>
+        {sync?.last_error && !message && (
+          <p className="form-message" role="status">
+            {sync.last_error}
+          </p>
+        )}
+        {sync?.credential_unavailable && (
+          <p className="form-message" role="status">
+            当前用户无法读取已存凭据，请重新填写。
+          </p>
+        )}
+      </div>
       {config ? (
         <form
           className="network-form"
+          onChange={() => {
+            dirty.current = true;
+          }}
           onSubmit={(event) => {
             event.preventDefault();
             void save(false);

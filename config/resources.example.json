@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "version": 1,
+  "network": "lab201",
+  "peer": ["tcp://47.93.55.228:12010"],
+  "resources": [
+    {
+      "id": "spark",
+      "name": "Spark",
+      "kind": "ssh",
+      "address": "192.168.200.10",
+      "port": 22,
+      "description": "SSH 资源占位，待网络建成后维护。"
+    }
+  ]
+}

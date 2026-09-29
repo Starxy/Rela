@@ -8,6 +8,17 @@ pub struct NodeInfo {
     #[serde(default)]
     pub ipv4_addr: String,
     pub inst_id: String,
+    #[serde(default)]
+    pub version: String,
+}
+
+pub fn version(value: &str) -> Option<String> {
+    if value.len() > 128 {
+        return None;
+    }
+    semver::Version::parse(value)
+        .ok()
+        .map(|version| version.to_string())
 }
 
 #[derive(Deserialize)]
@@ -171,6 +182,7 @@ mod tests {
         let node = NodeInfo {
             ipv4_addr: "10.1.2.3/24".into(),
             inst_id: "test".into(),
+            version: "2.7.0-test".into(),
         };
         assert!(!connection_snapshot(&node, &[], true).connected);
         assert!(!connection_snapshot(&node, &[Connector { status: 0 }], false).connected);

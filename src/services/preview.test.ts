@@ -2,6 +2,46 @@ import { describe, expect, it } from 'vitest';
 import { createPreviewService } from './preview';
 
 describe('浏览器演示状态', () => {
+  it('本地线路重启后保留，手动更新只覆盖线上字段', async () => {
+    const values = new Map<string, string>();
+    const storage = {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => {
+        values.set(key, value);
+      },
+    };
+    const first = createPreviewService(storage);
+    await first.saveNetworkConfig({
+      ...(await first.getNetworkConfig()),
+      peers: ['tcp://127.0.0.1:2222'],
+      private_mode: false,
+      disable_p2p: false,
+      gateway_ip: '127.0.0.1',
+    });
+    const restarted = createPreviewService(storage);
+    expect((await restarted.getResourceSync()).local_override).toBe(true);
+    await restarted.saveNetworkConfig({
+      ...(await restarted.getNetworkConfig()),
+      peers: ['tcp://47.93.55.228:12010'],
+    });
+    expect(
+      (await createPreviewService(storage).getResourceSync()).local_override,
+    ).toBe(true);
+    expect((await restarted.checkSoftwareUpdate()).last_checked).toBeTruthy();
+    expect((await restarted.refreshResources()).local_override).toBe(false);
+    expect(await restarted.getNetworkConfig()).toMatchObject({
+      network_name: 'lab201',
+      peers: ['tcp://47.93.55.228:12010'],
+      private_mode: false,
+      disable_p2p: false,
+      gateway_ip: '127.0.0.1',
+      has_credential: true,
+    });
+    expect(
+      (await createPreviewService(storage).getResourceSync()).local_override,
+    ).toBe(false);
+  });
+
   it('只有连接后才有虚拟地址和可用资源，断开后清理状态', async () => {
     const service = createPreviewService();
     expect(await service.getStatus()).toMatchObject({

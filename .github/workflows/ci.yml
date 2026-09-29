@@ -42,6 +42,14 @@ jobs:
       - run: cargo test --workspace --locked
       - run: npm run smoke:core
       - run: npm run test:credential
+      - run: npm run test:release-tools
       - run: npm run tauri -- build --debug --no-bundle
       - run: npm run package:portable -- --debug
+      - name: Build unsigned NSIS for package verification
+        shell: pwsh
+        run: |
+          $override = Join-Path $env:RUNNER_TEMP 'rela-unsigned-bundle.json'
+          '{"bundle":{"createUpdaterArtifacts":false}}' | Set-Content -LiteralPath $override -Encoding utf8
+          npm run tauri -- bundle --debug --no-sign --ci --bundles nsis --config $override
+      - run: npm run check:packages -- --debug
       - run: powershell -NoProfile -File scripts/test-portable-cleanup.ps1

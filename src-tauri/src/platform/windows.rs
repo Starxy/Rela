@@ -8,14 +8,15 @@ use std::{
     os::windows::{
         ffi::OsStrExt,
         fs::{MetadataExt, OpenOptionsExt},
+        io::{AsRawHandle, FromRawHandle, OwnedHandle},
     },
     path::{Path, PathBuf},
     ptr::{null, null_mut},
 };
 use windows_sys::Win32::{
     Foundation::{
-        CloseHandle, GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_BUFFER_OVERFLOW,
-        ERROR_CANCELLED, ERROR_SERVICE_DOES_NOT_EXIST, HANDLE, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
+        GetLastError, LocalFree, ERROR_ALREADY_EXISTS, ERROR_BUFFER_OVERFLOW, ERROR_CANCELLED,
+        ERROR_SERVICE_DOES_NOT_EXIST, INVALID_HANDLE_VALUE, WAIT_OBJECT_0,
     },
     NetworkManagement::IpHelper::{
         GetAdaptersAddresses, IcmpCloseHandle, IcmpCreateFile, IcmpSendEcho, GAA_FLAG_SKIP_ANYCAST,
@@ -38,12 +39,13 @@ use windows_sys::Win32::{
     },
     System::{
         Services::*,
-        Threading::{GetExitCodeProcess, WaitForSingleObject},
+        Threading::{GetExitCodeProcess, GetProcessId, WaitForSingleObject},
     },
     UI::{
         Shell::{
-            FOLDERID_ProgramData, IsUserAnAdmin, SHGetKnownFolderPath, ShellExecuteExW,
-            SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
+            FOLDERID_LocalAppData, FOLDERID_ProgramData, IsUserAnAdmin, SHGetKnownFolderPath,
+            ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS,
+            SHELLEXECUTEINFOW,
         },
         WindowsAndMessaging::SW_HIDE,
     },
@@ -53,14 +55,18 @@ fn wide(value: impl AsRef<OsStr>) -> Vec<u16> {
     value.as_ref().encode_wide().chain(Some(0)).collect()
 }
 
-struct Handle(HANDLE);
-impl Drop for Handle {
-    fn drop(&mut self) {
-        unsafe {
-            CloseHandle(self.0);
-        }
+pub fn show_update_error(message: &str) {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
+    unsafe {
+        MessageBoxW(
+            null_mut(),
+            wide(message).as_ptr(),
+            wide("Rela 更新恢复").as_ptr(),
+            MB_OK | MB_ICONERROR,
+        );
     }
 }
+
 struct ServiceHandle(SC_HANDLE);
 impl Drop for ServiceHandle {
     fn drop(&mut self) {
@@ -146,6 +152,36 @@ pub fn replace_file(from: &Path, to: &Path) -> Result<(), AppError> {
     }
 }
 
+/// Same-volume durable move without replacing an existing destination.
+pub fn move_file_new(from: &Path, to: &Path) -> Result<(), AppError> {
+    if unsafe {
+        MoveFileExW(
+            wide(from).as_ptr(),
+            wide(to).as_ptr(),
+            MOVEFILE_WRITE_THROUGH,
+        )
+    } == 0
+    {
+        return Err(storage_error());
+    }
+    Ok(())
+}
+
+/// Create a new current-user recovery directory with its ACL already applied.
+/// Existing directories are never adopted or have their permissions rewritten.
+pub fn create_private_directory(path: &Path) -> Result<(), AppError> {
+    let desc = descriptor("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)")?;
+    let attributes = SECURITY_ATTRIBUTES {
+        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
+        lpSecurityDescriptor: desc.0,
+        bInheritHandle: 0,
+    };
+    if unsafe { CreateDirectoryW(wide(path).as_ptr(), &attributes) } == 0 {
+        return Err(storage_error());
+    }
+    Ok(())
+}
+
 fn descriptor(sddl: &str) -> Result<LocalAllocation, AppError> {
     let mut raw = null_mut();
     if unsafe {
@@ -179,8 +215,16 @@ pub fn private_file(path: &Path) -> Result<(), AppError> {
 }
 
 pub fn service_directory() -> Result<PathBuf, AppError> {
+    known_directory(&FOLDERID_ProgramData)
+}
+
+pub fn coordination_directory() -> Result<PathBuf, AppError> {
+    Ok(known_directory(&FOLDERID_LocalAppData)?.join("coordination"))
+}
+
+fn known_directory(id: &windows_sys::core::GUID) -> Result<PathBuf, AppError> {
     let mut raw = null_mut();
-    if unsafe { SHGetKnownFolderPath(&FOLDERID_ProgramData, 0, null_mut(), &mut raw) } < 0 {
+    if unsafe { SHGetKnownFolderPath(id, 0, null_mut(), &mut raw) } < 0 {
         return Err(storage_error());
     }
     let path = unsafe {
@@ -199,7 +243,10 @@ pub fn service_directory() -> Result<PathBuf, AppError> {
 
 pub fn secure_service_directory(path: &Path) -> Result<(), AppError> {
     // OWNER RIGHTS prevents a pre-existing unprivileged owner from restoring a writable DACL.
-    let desc = descriptor("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;RC;;;OW)")?;
+    if path.try_exists().map_err(|_| storage_error())? {
+        trusted_service_object(path)?;
+    }
+    let desc = descriptor("O:BAG:BAD:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;RC;;;OW)")?;
     let attributes = SECURITY_ATTRIBUTES {
         nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
         lpSecurityDescriptor: desc.0,
@@ -223,6 +270,103 @@ pub fn secure_service_directory(path: &Path) -> Result<(), AppError> {
     } == 0
     {
         return Err(storage_error());
+    }
+    Ok(())
+}
+
+pub fn secure_service_file(path: &Path) -> Result<(), AppError> {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
+    };
+    trusted_service_object(path)?;
+    let metadata = fs::symlink_metadata(path).map_err(|_| storage_error())?;
+    if !metadata.is_file() || metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(storage_error());
+    }
+    let file = fs::OpenOptions::new()
+        .read(true)
+        .open(path)
+        .map_err(|_| storage_error())?;
+    let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { zeroed() };
+    if unsafe { GetFileInformationByHandle(file.as_raw_handle().cast(), &mut info) } == 0
+        || info.nNumberOfLinks != 1
+    {
+        return Err(storage_error());
+    }
+    let desc = descriptor("D:P(A;;FA;;;SY)(A;;FA;;;BA)(A;;RC;;;OW)")?;
+    if unsafe {
+        SetFileSecurityW(
+            wide(path).as_ptr(),
+            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            desc.0,
+        )
+    } == 0
+    {
+        return Err(storage_error());
+    }
+    Ok(())
+}
+
+/// Never promote a pre-created user-writable object into trusted recovery state.
+fn trusted_service_object(path: &Path) -> Result<(), AppError> {
+    use windows_sys::Win32::Security::{
+        Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+        GetAce, IsWellKnownSid, WinBuiltinAdministratorsSid, WinLocalSystemSid, ACCESS_ALLOWED_ACE,
+        ACE_HEADER, OWNER_SECURITY_INFORMATION,
+    };
+    let metadata = fs::symlink_metadata(path).map_err(|_| storage_error())?;
+    if metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
+        return Err(storage_error());
+    }
+    let mut owner = null_mut();
+    let mut dacl = null_mut();
+    let mut raw = null_mut();
+    if unsafe {
+        GetNamedSecurityInfoW(
+            wide(path).as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            &mut dacl,
+            null_mut(),
+            &mut raw,
+        )
+    } != 0
+    {
+        return Err(storage_error());
+    }
+    let _descriptor = LocalAllocation(raw);
+    let administrator = |sid: *mut c_void| {
+        !sid.is_null()
+            && unsafe {
+                IsWellKnownSid(sid, WinBuiltinAdministratorsSid) != 0
+                    || IsWellKnownSid(sid, WinLocalSystemSid) != 0
+            }
+    };
+    if !administrator(owner) || dacl.is_null() {
+        return Err(storage_error());
+    }
+    // Generic write/all, delete, ACL/owner mutation and file/directory write rights.
+    const MUTATION: u32 = 0x500D0156;
+    for index in 0..unsafe { (*dacl).AceCount } {
+        let mut raw_ace = null_mut();
+        if unsafe { GetAce(dacl, u32::from(index), &mut raw_ace) } == 0 {
+            return Err(storage_error());
+        }
+        let header = unsafe { &*raw_ace.cast::<ACE_HEADER>() };
+        if header.AceType == 1 {
+            continue;
+        } // Access-denied ACE cannot grant mutation.
+        if header.AceType != 0 || usize::from(header.AceSize) < size_of::<ACCESS_ALLOWED_ACE>() {
+            return Err(storage_error());
+        }
+        let ace = unsafe { &*raw_ace.cast::<ACCESS_ALLOWED_ACE>() };
+        let sid = (&ace.SidStart as *const u32).cast_mut().cast();
+        if ace.Mask & MUTATION != 0 && !administrator(sid) {
+            return Err(storage_error());
+        }
     }
     Ok(())
 }
@@ -316,9 +460,9 @@ pub fn start_service() -> Result<(), AppError> {
     Ok(())
 }
 
-pub fn verify_service_binary(expected: &Path) -> Result<(), AppError> {
+fn service_binary_command() -> Result<Option<String>, AppError> {
     let Some(service) = service_handle(SERVICE_QUERY_CONFIG)? else {
-        return Ok(());
+        return Ok(None);
     };
     let mut needed = 0;
     unsafe {
@@ -332,16 +476,133 @@ pub fn verify_service_binary(expected: &Path) -> Result<(), AppError> {
     if unsafe { QueryServiceConfigW(service.0, config, needed, &mut needed) } == 0 {
         return Err(service_error());
     }
-    let binary = unsafe { string_from_wide((*config).lpBinaryPathName) };
-    let expected = expected.to_string_lossy().to_lowercase();
-    let actual = binary.to_lowercase();
-    if !actual.starts_with(&format!("\"{expected}\" "))
-        && !actual.starts_with(&format!("{expected} "))
+    Ok(Some(unsafe {
+        string_from_wide((*config).lpBinaryPathName)
+    }))
+}
+
+fn service_command_matches(binary: &str, expected: &Path) -> bool {
+    let command = wide(binary);
+    let mut count = 0;
+    let argv =
+        unsafe { windows_sys::Win32::UI::Shell::CommandLineToArgvW(command.as_ptr(), &mut count) };
+    if argv.is_null() {
+        return false;
+    }
+    let _allocation = LocalAllocation(argv.cast());
+    if count != 9 {
+        return false;
+    }
+    let args: Vec<String> = (0..count as usize)
+        .map(|index| unsafe { string_from_wide(*argv.add(index)) })
+        .collect();
+    let Some(root) = expected.parent().and_then(Path::parent) else {
+        return false;
+    };
+    path_argument_matches(&args[0], expected)
+        && args[1] == "--disable-env-parsing"
+        && args[2] == "--config-file"
+        && path_argument_matches(&args[3], &root.join("core.toml"))
+        && args[4] == "--rpc-portal"
+        && args[5] == crate::network_config::RPC_PORTAL
+        && args[6] == "--rpc-portal-whitelist"
+        && args[7] == "127.0.0.1/32"
+        && args[8] == "--no-listener"
+}
+
+fn path_argument_matches(value: &str, expected: &Path) -> bool {
+    // std::fs::canonicalize in the official CLI emits extended-length local paths.
+    let value = value.strip_prefix(r"\\?\").unwrap_or(value);
+    value.eq_ignore_ascii_case(&expected.to_string_lossy())
+}
+
+fn service_conflict() -> AppError {
+    AppError::new(
+        "service_conflict",
+        "同名网络服务不属于当前 Rela，无法操作。",
+    )
+}
+
+pub fn owned_service_binary(allowed: &[PathBuf]) -> Result<Option<PathBuf>, AppError> {
+    let Some(binary) = service_binary_command()? else {
+        return Ok(None);
+    };
+    allowed
+        .iter()
+        .find(|path| service_command_matches(&binary, path))
+        .cloned()
+        .map(Some)
+        .ok_or_else(service_conflict)
+}
+
+pub fn delete_service() -> Result<(), AppError> {
+    let Some(service) = service_handle(0x00010000)? else {
+        return Ok(());
+    };
+    if unsafe { DeleteService(service.0) } == 0
+        && unsafe { GetLastError() }
+            != windows_sys::Win32::Foundation::ERROR_SERVICE_MARKED_FOR_DELETE
     {
-        return Err(AppError::new(
-            "service_conflict",
-            "同名网络服务不属于当前 Rela，无法操作。",
-        ));
+        return Err(service_error());
+    }
+    Ok(())
+}
+
+pub fn service_description() -> Result<Option<String>, AppError> {
+    let Some(service) = service_handle(SERVICE_QUERY_CONFIG)? else {
+        return Ok(None);
+    };
+    let mut needed = 0;
+    unsafe {
+        QueryServiceConfig2W(
+            service.0,
+            SERVICE_CONFIG_DESCRIPTION,
+            null_mut(),
+            0,
+            &mut needed,
+        );
+    }
+    if needed == 0 || needed > 16 * 1024 {
+        return Err(service_error());
+    }
+    let mut buffer = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
+    if unsafe {
+        QueryServiceConfig2W(
+            service.0,
+            SERVICE_CONFIG_DESCRIPTION,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    } == 0
+    {
+        return Err(service_error());
+    }
+    let description = unsafe { &*buffer.as_ptr().cast::<SERVICE_DESCRIPTIONW>() };
+    if description.lpDescription.is_null() {
+        return Ok(None);
+    }
+    Ok(Some(unsafe { string_from_wide(description.lpDescription) }))
+}
+
+pub fn set_service_description(value: &str) -> Result<(), AppError> {
+    if value.len() > 4096 || value.contains('\0') {
+        return Err(service_error());
+    }
+    let service = service_handle(SERVICE_CHANGE_CONFIG)?.ok_or_else(service_error)?;
+    let mut value = wide(value);
+    let description = SERVICE_DESCRIPTIONW {
+        lpDescription: value.as_mut_ptr(),
+    };
+    if unsafe {
+        ChangeServiceConfig2W(
+            service.0,
+            SERVICE_CONFIG_DESCRIPTION,
+            (&description as *const SERVICE_DESCRIPTIONW).cast(),
+        )
+    } == 0
+    {
+        return Err(service_error());
     }
     Ok(())
 }
@@ -367,13 +628,113 @@ pub fn quote_argument(value: &OsStr) -> String {
     out
 }
 
-pub fn elevate_helper(request: &Path) -> Result<(), AppError> {
+pub fn elevate_helper(request: &Path) -> Result<bool, AppError> {
     let executable = std::env::current_exe().map_err(|_| service_error())?;
-    let file = wide(&executable);
-    let parameters = wide(format!(
-        "--rela-core-helper {}",
-        quote_argument(request.as_os_str())
-    ));
+    let process = launch_elevated(&executable, "--rela-core-helper", request)?;
+    process.wait(std::time::Duration::from_secs(120))?;
+    let mut code = 1;
+    if unsafe { GetExitCodeProcess(process.0.as_raw_handle(), &mut code) } == 0 {
+        return Err(service_error());
+    }
+    match code {
+        0 => Ok(true),
+        10 => Ok(false),
+        2 => Err(AppError::new(
+            "core_integrity_failed",
+            "网络引擎文件校验失败，请重新安装 Rela。",
+        )),
+        3 => Err(AppError::new(
+            "service_conflict",
+            "网络服务或管理端口被占用，请先关闭冲突的客户端。",
+        )),
+        4 => Err(AppError::new(
+            "core_downgrade_blocked",
+            "此 Rela 副本较旧，请使用部署当前引擎的较新版本。",
+        )),
+        5 => Err(AppError::new(
+            "core_recovery_required",
+            "网络引擎切换尚未恢复。已保留备份，请重试或联系管理员，勿删除服务数据。",
+        )),
+        6 => Err(AppError::new(
+            "core_update_rolled_back",
+            "网络引擎更新未完成，已恢复更新前的引擎和配置。",
+        )),
+        7 => Err(AppError::new(
+            "credential_migration_required",
+            "已保留旧引擎和配置，但未恢复旧密码连接。请填写 credential 后重新连接。",
+        )),
+        8 => Err(AppError::new(
+            "core_version_unknown",
+            "现有引擎版本无法验证，请使用较新的 Rela 或联系管理员恢复。",
+        )),
+        9 => Err(AppError::new(
+            "core_application_update_pending",
+            "软件更新尚未完成，请使用发起更新的 Rela 副本完成恢复。",
+        )),
+        _ => Err(AppError::new(
+            "service_action_failed",
+            "网络引擎服务操作失败，请检查系统权限并重试。",
+        )),
+    }
+}
+
+pub struct ElevatedProcess(OwnedHandle);
+impl ElevatedProcess {
+    pub fn id(&self) -> u32 {
+        unsafe { GetProcessId(self.0.as_raw_handle()) }
+    }
+    pub fn has_exited(&self) -> bool {
+        unsafe { WaitForSingleObject(self.0.as_raw_handle(), 0) == WAIT_OBJECT_0 }
+    }
+    pub fn wait(&self, timeout: std::time::Duration) -> Result<(), AppError> {
+        if unsafe {
+            WaitForSingleObject(
+                self.0.as_raw_handle(),
+                timeout.as_millis().min(u128::from(u32::MAX - 1)) as u32,
+            )
+        } == WAIT_OBJECT_0
+        {
+            Ok(())
+        } else {
+            Err(AppError::new(
+                "service_timeout",
+                "系统操作尚未完成，请稍后查看连接状态。",
+            ))
+        }
+    }
+}
+
+/// Only the fixed, authenticated Core-update protocol is available in this entry.
+pub fn launch_core_update_helper(
+    executable: &Path,
+    request: &Path,
+) -> Result<ElevatedProcess, AppError> {
+    launch_elevated(executable, "--rela-core-update", request)
+}
+
+pub fn launch_installed_recovery_helper(
+    executable: &Path,
+    request: &Path,
+) -> Result<ElevatedProcess, AppError> {
+    launch_elevated(executable, "--rela-installed-recover", request).map_err(|failure| {
+        if failure.code == "permission_cancelled" {
+            AppError::new(
+                "permission_cancelled",
+                "已取消更新恢复授权，恢复状态和备份已保留。",
+            )
+        } else {
+            failure
+        }
+    })
+}
+
+fn launch_elevated(
+    executable: &Path,
+    entry: &'static str,
+    request: &Path,
+) -> Result<ElevatedProcess, AppError> {
+    let file = wide(executable);
+    let parameters = wide(format!("{entry} {}", quote_argument(request.as_os_str())));
     let verb = wide("runas");
     let mut info: SHELLEXECUTEINFOW = unsafe { zeroed() };
     info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
@@ -392,32 +753,109 @@ pub fn elevate_helper(request: &Path) -> Result<(), AppError> {
     if info.hProcess.is_null() {
         return Err(service_error());
     }
-    let process = Handle(info.hProcess);
-    if unsafe { WaitForSingleObject(process.0, 120_000) } != WAIT_OBJECT_0 {
-        return Err(AppError::new(
-            "service_timeout",
-            "系统操作尚未完成，请稍后查看连接状态。",
-        ));
+    Ok(ElevatedProcess(unsafe {
+        OwnedHandle::from_raw_handle(info.hProcess)
+    }))
+}
+
+/// Only validated manifest targets reach system applications; never a shell command.
+pub fn open_resource(resource: &rela_manifests::Resource) -> Result<(), AppError> {
+    use rela_manifests::ResourceKind;
+    resource
+        .validate()
+        .map_err(crate::distribution::manifest_error)?;
+    let failed = || {
+        AppError::new(
+            "resource_open_failed",
+            "无法打开资源，请检查系统应用和资源地址。",
+        )
+    };
+    match resource.kind {
+        ResourceKind::Ssh => {
+            use std::{os::windows::process::CommandExt, process::Command};
+            use windows_sys::Win32::System::SystemInformation::GetSystemDirectoryW;
+            let mut buffer = [0u16; 512];
+            let length =
+                unsafe { GetSystemDirectoryW(buffer.as_mut_ptr(), buffer.len() as u32) } as usize;
+            if length == 0 || length >= buffer.len() {
+                return Err(failed());
+            }
+            let executable =
+                PathBuf::from(String::from_utf16_lossy(&buffer[..length])).join("OpenSSH/ssh.exe");
+            if !executable.is_file() {
+                return Err(AppError::new(
+                    "ssh_unavailable",
+                    "请先在 Windows 可选功能中安装 OpenSSH 客户端。",
+                ));
+            }
+            let mut command = Command::new(executable);
+            command.args(["-p", &resource.port.expect("validated port").to_string()]);
+            if let Some(username) = &resource.username {
+                command.args(["-l", username]);
+            }
+            // The user clicked an interactive SSH entry, so allocate its console.
+            command
+                .arg("--")
+                .arg(&resource.address)
+                .creation_flags(0x00000010)
+                .spawn()
+                .map_err(|_| failed())?;
+        }
+        ResourceKind::Web => {
+            let target = wide(&resource.address);
+            let verb = wide("open");
+            let mut info: SHELLEXECUTEINFOW = unsafe { zeroed() };
+            info.cbSize = size_of::<SHELLEXECUTEINFOW>() as u32;
+            info.fMask = SEE_MASK_NOASYNC | SEE_MASK_FLAG_NO_UI;
+            info.lpVerb = verb.as_ptr();
+            info.lpFile = target.as_ptr();
+            info.nShow = 1;
+            if unsafe { ShellExecuteExW(&mut info) } == 0 {
+                return Err(failed());
+            }
+        }
+        ResourceKind::Nas => {
+            use windows_sys::Win32::{
+                System::Com::{
+                    CoInitializeEx, CoTaskMemFree, CoUninitialize, COINIT_APARTMENTTHREADED,
+                },
+                System::SystemServices::SFGAO_FOLDER,
+                UI::Shell::{SHOpenFolderAndSelectItems, SHParseDisplayName},
+            };
+            let initialized = unsafe { CoInitializeEx(null(), COINIT_APARTMENTTHREADED as u32) };
+            if initialized < 0 {
+                return Err(failed());
+            }
+            let target = wide(&resource.address);
+            let mut item = null_mut();
+            let mut attributes = 0;
+            let parsed = unsafe {
+                SHParseDisplayName(
+                    target.as_ptr(),
+                    null_mut(),
+                    &mut item,
+                    SFGAO_FOLDER,
+                    &mut attributes,
+                )
+            };
+            let opened = if parsed >= 0 && !item.is_null() && attributes & SFGAO_FOLDER != 0 {
+                // Folder-only API: a NAS filename can never become an executable launch.
+                unsafe { SHOpenFolderAndSelectItems(item, 0, null(), 0) }
+            } else {
+                -1
+            };
+            unsafe {
+                if !item.is_null() {
+                    CoTaskMemFree(item.cast());
+                }
+                CoUninitialize();
+            }
+            if opened < 0 {
+                return Err(failed());
+            }
+        }
     }
-    let mut code = 1;
-    if unsafe { GetExitCodeProcess(process.0, &mut code) } == 0 {
-        return Err(service_error());
-    }
-    match code {
-        0 => Ok(()),
-        2 => Err(AppError::new(
-            "core_integrity_failed",
-            "网络引擎文件校验失败，请重新安装 Rela。",
-        )),
-        3 => Err(AppError::new(
-            "service_conflict",
-            "网络服务或管理端口被占用，请先关闭冲突的客户端。",
-        )),
-        _ => Err(AppError::new(
-            "service_action_failed",
-            "网络引擎服务操作失败，请检查系统权限并重试。",
-        )),
-    }
+    Ok(())
 }
 
 unsafe fn string_from_wide(raw: *const u16) -> String {
@@ -535,6 +973,24 @@ mod tests {
             let _allocation = LocalAllocation(argv.cast());
             assert_eq!(count, 2);
             assert_eq!(unsafe { string_from_wide(*argv.add(1)) }, text);
+        }
+    }
+
+    #[test]
+    fn service_ownership_requires_exact_path_and_restricted_arguments() {
+        let path = Path::new(r"C:\Program Data\Rela\engine-v2\easytier-core.exe");
+        let command = r#""\\?\C:\Program Data\Rela\engine-v2\easytier-core.exe" --disable-env-parsing --config-file "C:\Program Data\Rela\core.toml" --rpc-portal 127.0.0.1:15888 --rpc-portal-whitelist 127.0.0.1/32 --no-listener"#;
+        let command = command.replace("127.0.0.1:15888", crate::network_config::RPC_PORTAL);
+        assert!(service_command_matches(&command, path));
+        assert!(service_command_matches(&command.replace("C:", "c:"), path));
+        for invalid in [
+            command.replace("easytier-core.exe", "easytier-core.exe.bad"),
+            command.replace("core.toml", "other.toml"),
+            command.replace("127.0.0.1/32", "0.0.0.0/0"),
+            format!("{command} --no-tun"),
+            command.replace("engine-v2", "engine"),
+        ] {
+            assert!(!service_command_matches(&invalid, path));
         }
     }
 

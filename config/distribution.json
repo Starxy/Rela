@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "resources_url": "https://raw.githubusercontent.com/Starxy/Rela/distribution/resources/stable.json",
+  "software_stable_url": "https://raw.githubusercontent.com/Starxy/Rela/distribution/software/stable.json",
+  "software_test_url": "https://raw.githubusercontent.com/Starxy/Rela/distribution/software/test.json",
+  "keys": [
+    {
+      "id": "resources-20260929",
+      "purpose": "resources",
+      "public_key": "WJ8/Q+JHv4j+h+noDLCA+0S3yzJVcWS+D68K8Ac9/R0="
+    },
+    {
+      "id": "software-20260929",
+      "purpose": "software",
+      "public_key": "VaJ5XLRxmJan6S9TvV1XDKkGY7lZkqEWRpOZ1pN4jv4="
+    }
+  ]
+}

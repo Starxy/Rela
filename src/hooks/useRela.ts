@@ -4,12 +4,14 @@ import type {
   DiagnosticReport,
   LabResource,
   RelaService,
+  ResourceSyncStatus,
 } from '../types';
 import { coreIsActive, errorMessage } from '../types';
 
 export function useRela(service: RelaService) {
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [resources, setResources] = useState<LabResource[]>([]);
+  const [sync, setSync] = useState<ResourceSyncStatus | null>(null);
   const [report, setReport] = useState<DiagnosticReport | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -22,14 +24,33 @@ export function useRela(service: RelaService) {
     refreshing.current += 1;
     const request = ++generation.current;
     try {
-      const [nextStatus, nextResources] = await Promise.all([
+      const [nextStatus, nextResources, nextSync] = await Promise.allSettled([
         service.getStatus(),
         service.getResources(),
+        service.getResourceSync(),
       ]);
       if (request !== generation.current) return;
-      setStatus(nextStatus);
-      setResources(nextResources);
-      setError(null);
+      if (nextStatus.status === 'fulfilled') {
+        const resourceValues =
+          nextResources.status === 'fulfilled' ? nextResources.value : [];
+        setStatus({
+          ...nextStatus.value,
+          resources_total: resourceValues.length,
+          resources_available: resourceValues.filter(
+            (resource) => resource.availability === 'reachable',
+          ).length,
+        });
+        setError(null);
+      } else {
+        setStatus(null);
+        setError(errorMessage(nextStatus.reason));
+      }
+      setResources(
+        nextResources.status === 'fulfilled' ? nextResources.value : [],
+      );
+      setSync(nextSync.status === 'fulfilled' ? nextSync.value : null);
+      if (nextResources.status === 'rejected')
+        setNotice(errorMessage(nextResources.reason));
     } catch (cause) {
       if (request !== generation.current) return;
       // 旧的“已连接”状态在状态查询失败后不再可信。
@@ -73,6 +94,7 @@ export function useRela(service: RelaService) {
   return {
     status,
     resources,
+    sync,
     report,
     busy,
     notice,

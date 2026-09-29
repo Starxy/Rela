@@ -42,8 +42,38 @@ export interface Preferences {
 export interface VersionInfo {
   app: string;
   easytier_target: string;
-  easytier_installed: string | null;
+  easytier_bundled: string | null;
+  easytier_deployed: string | null;
+  easytier_running: string | null;
+  engine_owner_app: string | null;
+  engine_revision: number | null;
   protocol: number;
+}
+
+export type UpdateChannel = 'stable' | 'test';
+export interface UpdateProgress {
+  phase: 'idle' | 'downloading' | 'preparing' | 'restarting' | 'failed';
+  version: string | null;
+  downloaded: number;
+  total: number;
+  error: string | null;
+}
+export interface SoftwareUpdateStatus {
+  channel: UpdateChannel;
+  install_kind: 'installer' | 'portable';
+  current_version: string;
+  checking: boolean;
+  last_checked: string | null;
+  last_error: string | null;
+  candidate: {
+    version: string;
+    notes: string;
+    published_at: string;
+    size: number;
+    core_version: string;
+    requires_manual_upgrade: boolean;
+  } | null;
+  cached: boolean;
 }
 
 export interface NetworkConfig {
@@ -64,6 +94,19 @@ export interface NetworkConfigUpdate {
   gateway_ip: string | null;
 }
 
+export interface ResourceSyncStatus {
+  local_override: boolean;
+  resource_version: number | null;
+  applied_resource_version: number | null;
+  pending_reconnect: boolean;
+  configuration_ready: boolean;
+  credential_unavailable: boolean;
+  has_credential: boolean;
+  refreshing: boolean;
+  last_checked: string | null;
+  last_error: string | null;
+}
+
 export function coreIsActive(status: ConnectionStatus | null): boolean {
   return (
     status != null && ['running', 'starting', 'stopping'].includes(status.core)
@@ -72,6 +115,7 @@ export function coreIsActive(status: ConnectionStatus | null): boolean {
 
 export interface RelaService {
   mode: 'desktop' | 'preview';
+  completeStartup(): Promise<string | null>;
   getStatus(): Promise<ConnectionStatus>;
   connect(): Promise<ConnectionStatus>;
   disconnect(): Promise<ConnectionStatus>;
@@ -86,6 +130,13 @@ export interface RelaService {
   getNetworkConfig(): Promise<NetworkConfig>;
   saveNetworkConfig(config: NetworkConfigUpdate): Promise<NetworkConfig>;
   resetNetworkConfig(): Promise<NetworkConfig>;
+  getResourceSync(): Promise<ResourceSyncStatus>;
+  refreshResources(): Promise<ResourceSyncStatus>;
+  getSoftwareUpdate(): Promise<SoftwareUpdateStatus>;
+  checkSoftwareUpdate(): Promise<SoftwareUpdateStatus>;
+  setUpdateChannel(channel: UpdateChannel): Promise<SoftwareUpdateStatus>;
+  getUpdateProgress(): Promise<UpdateProgress>;
+  installSoftwareUpdate(version: string): Promise<void>;
 }
 
 export function errorMessage(error: unknown): string {

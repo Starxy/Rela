@@ -4,17 +4,21 @@ import type {
   Preferences,
   RelaService,
   VersionInfo,
+  ResourceSyncStatus,
 } from '../types';
 import { errorMessage } from '../types';
 import { NetworkSettings } from '../components/NetworkSettings';
+import { SoftwareUpdates } from '../components/SoftwareUpdates';
 
 export function Settings({
   service,
   status,
+  sync,
   onSaved,
 }: {
   service: RelaService;
   status: ConnectionStatus | null;
+  sync: ResourceSyncStatus | null;
   onSaved: () => void;
 }) {
   const [preferences, setPreferences] = useState<Preferences | null>(null);
@@ -88,6 +92,7 @@ export function Settings({
           <NetworkSettings
             service={service}
             status={status}
+            sync={sync}
             onSaved={onSaved}
           />
         ) : preferences ? (
@@ -122,7 +127,7 @@ export function Settings({
                   type="checkbox"
                   role="switch"
                   checked={preferences.launch_at_login}
-                  disabled={service.mode !== 'preview' || saving}
+                  disabled
                   onChange={(event) =>
                     setPreferences({
                       ...preferences,
@@ -138,7 +143,7 @@ export function Settings({
                   type="checkbox"
                   role="switch"
                   checked={preferences.auto_connect}
-                  disabled={service.mode !== 'preview' || saving}
+                  disabled
                   onChange={(event) =>
                     setPreferences({
                       ...preferences,
@@ -169,11 +174,30 @@ export function Settings({
         )}
       </div>
       {version && (
-        <div className="about-row">
-          <span>Rela</span>
-          <span>{version.app}</span>
+        <div>
+          <div className="about-row">
+            <span>Rela</span>
+            <span>{version.app}</span>
+          </div>
+          {tab === 'general' && (
+            <>
+              <div className="about-row">
+                <span>随附引擎</span>
+                <span>{version.easytier_bundled ?? '未通过校验'}</span>
+              </div>
+              <div className="about-row">
+                <span>服务引擎</span>
+                <span>{version.easytier_deployed ?? '未部署或版本未知'}</span>
+              </div>
+              <div className="about-row">
+                <span>正在运行</span>
+                <span>{version.easytier_running ?? '未运行或版本未知'}</span>
+              </div>
+            </>
+          )}
         </div>
       )}
+      {tab === 'general' && <SoftwareUpdates service={service} />}
     </>
   );
 }

@@ -1,0 +1,6 @@
+{
+  "format": "rela.signed.v1",
+  "key_id": "synthetic-test-key",
+  "payload": "ewogICJzY2hlbWFfdmVyc2lvbiI6IDEsCiAgInZlcnNpb24iOiAxLAogICJuZXR3b3JrIjogImxhYjIwMSIsCiAgInBlZXIiOiBbInRjcDovLzQ3LjkzLjU1LjIyODoxMjAxMCJdLAogICJyZXNvdXJjZXMiOiBbCiAgICB7CiAgICAgICJpZCI6ICJzcGFyayIsCiAgICAgICJuYW1lIjogIlNwYXJrIiwKICAgICAgImtpbmQiOiAic3NoIiwKICAgICAgImFkZHJlc3MiOiAiMTkyLjE2OC4yMDAuMTAiLAogICAgICAicG9ydCI6IDIyLAogICAgICAiZGVzY3JpcHRpb24iOiAiU1NIIOi1hOa6kOWNoOS9je+8jOW+hee9kee7nOW7uuaIkOWQjue7tOaKpOOAgiIKICAgIH0KICBdCn0K",
+  "signature": "c4kaus1wZgbyoQP+iqZWFFXn095tERbcyWBfTPEkWYhVmChaMDXo8Umo3XDz/8mbrrVf73K0jcZqcJEPz8aABA=="
+}

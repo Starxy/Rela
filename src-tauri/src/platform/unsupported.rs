@@ -25,7 +25,13 @@ pub fn private_file(_: &Path) -> Result<(), AppError> {
 pub fn service_directory() -> Result<PathBuf, AppError> {
     Err(unsupported())
 }
+pub fn coordination_directory() -> Result<PathBuf, AppError> {
+    Err(unsupported())
+}
 pub fn secure_service_directory(_: &Path) -> Result<(), AppError> {
+    Err(unsupported())
+}
+pub fn secure_service_file(_: &Path) -> Result<(), AppError> {
     Err(unsupported())
 }
 pub fn is_elevated() -> bool {
@@ -43,10 +49,22 @@ pub fn stop_service() -> Result<(), AppError> {
 pub fn start_service() -> Result<(), AppError> {
     Err(unsupported())
 }
-pub fn verify_service_binary(_: &Path) -> Result<(), AppError> {
+pub fn owned_service_binary(_: &[PathBuf]) -> Result<Option<PathBuf>, AppError> {
     Err(unsupported())
 }
-pub fn elevate_helper(_: &Path) -> Result<(), AppError> {
+pub fn delete_service() -> Result<(), AppError> {
+    Err(unsupported())
+}
+pub fn service_description() -> Result<Option<String>, AppError> {
+    Err(unsupported())
+}
+pub fn set_service_description(_: &str) -> Result<(), AppError> {
+    Err(unsupported())
+}
+pub fn elevate_helper(_: &Path) -> Result<bool, AppError> {
+    Err(unsupported())
+}
+pub fn open_resource(_: &rela_manifests::Resource) -> Result<(), AppError> {
     Err(unsupported())
 }
 pub fn tun_has_ip(_: &str, _: Ipv4Addr) -> bool {

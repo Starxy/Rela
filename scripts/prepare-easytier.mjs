@@ -42,7 +42,11 @@ async function prepared() {
     const manifest = JSON.parse(
       await readFile(path.join(output, 'manifest.json'), 'utf8'),
     );
-    if (manifest.archive_sha256 !== sha256 || manifest.version !== version)
+    if (
+      manifest.archive_sha256 !== sha256 ||
+      manifest.version !== version ||
+      manifest.engine_revision !== pin.engine_revision
+    )
       return false;
     for (const file of required) {
       if (

@@ -6,11 +6,12 @@ import {
   Power,
   Server,
 } from 'lucide-react';
-import type { ConnectionStatus } from '../types';
+import type { ConnectionStatus, ResourceSyncStatus } from '../types';
 import { coreIsActive } from '../types';
 
 interface Props {
   status: ConnectionStatus | null;
+  sync: ResourceSyncStatus | null;
   busy: string | null;
   error: string | null;
   onConnect: () => void;
@@ -21,6 +22,7 @@ interface Props {
 
 export function Home({
   status,
+  sync,
   busy,
   error,
   onConnect,
@@ -31,6 +33,8 @@ export function Home({
   const connected = status?.connected ?? false;
   const active = coreIsActive(status);
   const pending = busy === 'connection';
+  const unavailable =
+    !active && (!sync?.configuration_ready || !sync.has_credential);
   const label = pending
     ? active
       ? '正在断开'
@@ -45,7 +49,11 @@ export function Home({
             ? '已连接'
             : active
               ? '连接未就绪'
-              : '未连接';
+              : !sync?.configuration_ready
+                ? '等待获取网络配置'
+                : !sync.has_credential
+                  ? '请填写连接凭据'
+                  : '未连接';
 
   return (
     <main className="home">
@@ -61,7 +69,9 @@ export function Home({
             aria-label="实验室连接"
             aria-busy={pending}
             title={active ? '断开连接' : '连接'}
-            disabled={!!busy || !status || status.core === 'stopping'}
+            disabled={
+              !!busy || !status || status.core === 'stopping' || unavailable
+            }
             onClick={onConnect}
           >
             {pending ? (

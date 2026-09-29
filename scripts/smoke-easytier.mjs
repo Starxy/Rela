@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { once } from 'node:events';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import net from 'node:net';
 import path from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -15,6 +15,9 @@ const binaries = path.join(root, 'src-tauri', 'binaries', 'easytier');
 const work = path.join(root, 'target', 'core-smoke', randomUUID());
 await mkdir(work, { recursive: true });
 const processes = [];
+const coreVersion = JSON.parse(
+  await readFile(path.join(root, 'config', 'easytier-version.json'), 'utf8'),
+).version;
 
 async function freePort() {
   const server = net.createServer();
@@ -140,6 +143,7 @@ try {
     ),
   );
   const node = await query(clientRpc, 'rela-smoke-client', 'node');
+  assert.equal(node.version, coreVersion, '实际 RPC 版本必须匹配随包版本');
   assert.match(node.ipv4_addr, /^10\.254\.254\.2(?:\/\d+)?$/);
   assert.match(node.config, /private_mode\s*=\s*true/);
   assert.match(node.config, /disable_p2p\s*=\s*true/);

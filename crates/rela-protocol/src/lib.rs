@@ -1,7 +1,7 @@
 //! Rela 前端与 Rust 后端之间的业务模型。不包含网络参数或设备凭据。
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 8;
 pub const EASYTIER_TARGET_VERSION: &str = "2.7.0-0a783c8e";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -143,8 +143,68 @@ impl Preferences {
 pub struct VersionInfo {
     pub app: String,
     pub easytier_target: String,
-    pub easytier_installed: Option<String>,
+    pub easytier_bundled: Option<String>,
+    pub easytier_deployed: Option<String>,
+    pub easytier_running: Option<String>,
+    pub engine_owner_app: Option<String>,
+    pub engine_revision: Option<u64>,
     pub protocol: u32,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    Test,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UpdatePhase {
+    #[default]
+    Idle,
+    Downloading,
+    Preparing,
+    Restarting,
+    Failed,
+}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct UpdateProgress {
+    pub phase: UpdatePhase,
+    pub version: Option<String>,
+    pub downloaded: u64,
+    pub total: u64,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallKind {
+    Installer,
+    Portable,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UpdateCandidate {
+    pub version: String,
+    pub notes: String,
+    pub published_at: String,
+    pub size: u64,
+    pub core_version: String,
+    pub requires_manual_upgrade: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SoftwareUpdateStatus {
+    pub channel: UpdateChannel,
+    pub install_kind: InstallKind,
+    pub current_version: String,
+    pub checking: bool,
+    pub last_checked: Option<String>,
+    pub last_error: Option<String>,
+    pub candidate: Option<UpdateCandidate>,
+    pub cached: bool,
 }
 
 /// 可供界面编辑的网络设置视图；已保存的密钥只返回是否存在。
@@ -156,6 +216,20 @@ pub struct NetworkConfigView {
     pub private_mode: bool,
     pub disable_p2p: bool,
     pub gateway_ip: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceSyncStatus {
+    pub local_override: bool,
+    pub resource_version: Option<u64>,
+    pub applied_resource_version: Option<u64>,
+    pub pending_reconnect: bool,
+    pub configuration_ready: bool,
+    pub credential_unavailable: bool,
+    pub has_credential: bool,
+    pub refreshing: bool,
+    pub last_checked: Option<String>,
+    pub last_error: Option<String>,
 }
 
 #[derive(Clone, Deserialize)]

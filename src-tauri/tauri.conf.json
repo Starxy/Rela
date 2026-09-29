@@ -33,9 +33,19 @@
     "active": true,
     "targets": ["nsis"],
     "resources": {
-      "binaries/easytier/": "easytier/",
+      "binaries/easytier/easytier-core.exe": "easytier/easytier-core.exe",
+      "binaries/easytier/easytier-cli.exe": "easytier/easytier-cli.exe",
+      "binaries/easytier/wintun.dll": "easytier/wintun.dll",
+      "binaries/easytier/Packet.dll": "easytier/Packet.dll",
+      "binaries/easytier/WinDivert64.sys": "easytier/WinDivert64.sys",
+      "binaries/easytier/manifest.json": "easytier/manifest.json",
       "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
-      "../third-party-licenses/": "third-party-licenses/"
+      "../packaging/portable/Remove-Network-Service.cmd": "Remove-Network-Service.cmd",
+      "../packaging/portable/Remove-Network-Service.ps1": "Remove-Network-Service.ps1",
+      "../third-party-licenses/EasyTier-LGPL-3.0.txt": "third-party-licenses/EasyTier-LGPL-3.0.txt",
+      "../third-party-licenses/GPL-3.0.txt": "third-party-licenses/GPL-3.0.txt",
+      "../third-party-licenses/WinDivert-LICENSE.txt": "third-party-licenses/WinDivert-LICENSE.txt",
+      "../third-party-licenses/Wintun-LICENSE.txt": "third-party-licenses/Wintun-LICENSE.txt"
     },
     "shortDescription": "实验室远程资源入口",
     "icon": [
@@ -51,6 +61,18 @@
         "installerHooks": "installer/hooks.nsh",
         "languages": ["SimpChinese", "English"],
         "displayLanguageSelector": true
+      }
+    },
+    "createUpdaterArtifacts": true
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDBDMDE2NjFENTFFRkI5OTMKUldTVHVlOVJIV1lCREora00rUlViTjJjalFLeVdDbmRpMTh6aUY4dU81NUZWakx1cEJHM0dGNUMK",
+      "endpoints": [],
+      "requireSignedVersion": true,
+      "dangerousInsecureTransportProtocol": true,
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

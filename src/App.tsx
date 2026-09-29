@@ -1,5 +1,5 @@
 import { Settings2, X } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ConnectionDetails } from './components/ConnectionDetails';
 import { Diagnostics } from './components/Diagnostics';
 import { Modal } from './components/Modal';
@@ -19,7 +19,16 @@ type ModalView = keyof typeof modalTitles;
 
 export default function App({ service }: { service: RelaService }) {
   const [modal, setModal] = useState<ModalView | null>(null);
+  const [startupNotice, setStartupNotice] = useState<string | null>(null);
   const rela = useRela(service);
+
+  useEffect(() => {
+    // Native exits an unready candidate so the controller can restore the old app.
+    void service
+      .completeStartup()
+      .then(setStartupNotice)
+      .catch(() => {});
+  }, [service]);
 
   const showDiagnostics = () => {
     setModal('diagnostics');
@@ -44,6 +53,7 @@ export default function App({ service }: { service: RelaService }) {
       </header>
       <Home
         status={rela.status}
+        sync={rela.sync}
         busy={rela.busy}
         error={rela.error}
         onConnect={() => void rela.toggleConnection()}
@@ -57,6 +67,7 @@ export default function App({ service }: { service: RelaService }) {
             <Settings
               service={service}
               status={rela.status}
+              sync={rela.sync}
               onSaved={() => {
                 void rela.refresh();
               }}
@@ -94,12 +105,15 @@ export default function App({ service }: { service: RelaService }) {
           )}
         </Modal>
       )}
-      {!modal && rela.notice && (
+      {!modal && (rela.notice || startupNotice) && (
         <div className="toast" role="status">
-          <span>{rela.notice}</span>
+          <span>{rela.notice || startupNotice}</span>
           <button
             className="icon-button"
-            onClick={rela.dismissNotice}
+            onClick={() => {
+              rela.dismissNotice();
+              setStartupNotice(null);
+            }}
             aria-label="关闭提示"
           >
             <X size={16} aria-hidden="true" />

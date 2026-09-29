@@ -24,13 +24,13 @@ Project and source: https://github.com/basil00/WinDivert
 
 License text is included as third-party-licenses/WinDivert-LICENSE.txt. The exact driver is the unmodified WinDivert64.sys from the pinned EasyTier archive.
 
-## Packet.dll / Npcap 1.79 — distribution unresolved
+## Packet.dll / Npcap 1.79 — distribution scope
 
 The DLL's version metadata identifies Npcap 1.79 and Copyright (c) 2023, Insecure.Com LLC.
 
 Npcap is not licensed under EasyTier's LGPL. The [Npcap license](https://github.com/nmap/npcap/blob/master/LICENSE) places separate restrictions on use and redistribution. Bundling this DLL in an upstream archive does not establish Rela's redistribution permission.
 
-Before distributing Rela to other users, resolve the applicable rights with the supplier, or replace this dependency with a verified compatible distribution path. Current packaging is for local development validation; it must not be presented as an approved public release. No Npcap driver installer is run by Rela.
+The release plan in todo.md (T45) records existing permission for internal distribution. On 2026-09-29 the source repository was made public. The scope recorded for internal distribution has not been documented here as covering publicly downloadable release assets; align the package's distribution scope and these notices before publishing those assets. Current packaging must not be presented as a cleared public release. No Npcap driver installer is run by Rela.
 
 ## Application dependencies
 

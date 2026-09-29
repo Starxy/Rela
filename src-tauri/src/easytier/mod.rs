@@ -1,13 +1,17 @@
 //! Rela 直接控制专用的 EasyTier Core Windows 服务，并通过官方 CLI 读取本机 RPC。
+mod deployment;
+mod managed_service;
 mod process;
 mod status;
+pub mod update_participant;
 
 use crate::{
+    distribution::store::ConfigStore,
     network_config::{self, NetworkConfig, RPC_PORTAL},
     platform::{self, ServiceState, SERVICE_NAME},
 };
 use rela_protocol::{
-    AppError, ConnectionStatus, CoreState, NetworkConfigUpdate, NetworkConfigView,
+    AppError, ConnectionStatus, CoreState, NetworkConfigUpdate, NetworkConfigView, VersionInfo,
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -16,7 +20,6 @@ use std::{
     ffi::OsString,
     fs,
     io::{Read, Write},
-    net::TcpListener,
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -33,14 +36,71 @@ const FILES: &[&str] = &[
     "WinDivert64.sys",
 ];
 
-#[derive(Deserialize)]
+#[derive(Clone, Serialize, Deserialize, PartialEq, Eq)]
 struct AssetManifest {
+    engine_revision: u64,
     version: String,
     files: BTreeMap<String, String>,
 }
 
+impl AssetManifest {
+    fn validate(&self) -> Result<(), AppError> {
+        if self.engine_revision > rela_manifests::MAX_REVISION
+            || semver::Version::parse(&self.version).is_err()
+            || self.version.len() > 128
+            || self.files.len() != FILES.len()
+            || !FILES.iter().all(|name| {
+                self.files.get(*name).is_some_and(|digest| {
+                    digest.len() == 64
+                        && digest
+                            .bytes()
+                            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+                })
+            })
+        {
+            return Err(integrity_error());
+        }
+        Ok(())
+    }
+
+    fn verify(&self, directory: &Path) -> Result<(), AppError> {
+        self.validate()?;
+        for name in FILES {
+            let path = directory.join(name);
+            let metadata = fs::symlink_metadata(&path).map_err(|_| integrity_error())?;
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                if metadata.file_attributes() & 0x400 != 0 {
+                    return Err(integrity_error());
+                }
+            }
+            if !metadata.is_file()
+                || metadata.file_type().is_symlink()
+                || metadata.len() > 256 * 1024 * 1024
+            {
+                return Err(integrity_error());
+            }
+            let mut file = fs::File::open(path).map_err(|_| integrity_error())?;
+            let mut hash = Sha256::new();
+            let mut buffer = [0u8; 65536];
+            loop {
+                let n = file.read(&mut buffer).map_err(|_| integrity_error())?;
+                if n == 0 {
+                    break;
+                }
+                hash.update(&buffer[..n]);
+            }
+            if self.files.get(*name) != Some(&format!("{:x}", hash.finalize())) {
+                return Err(integrity_error());
+            }
+        }
+        Ok(())
+    }
+}
+
 pub struct EasyTierCore {
-    pub config_path: PathBuf,
+    configuration_store: Arc<ConfigStore>,
     binaries: PathBuf,
     requests: PathBuf,
     operations: Mutex<()>,
@@ -70,9 +130,13 @@ impl Drop for RequestFile {
 }
 
 impl EasyTierCore {
-    pub fn new(config_dir: PathBuf, resource_dir: PathBuf) -> Self {
+    pub fn new(
+        config_dir: PathBuf,
+        resource_dir: PathBuf,
+        configuration_store: Arc<ConfigStore>,
+    ) -> Self {
         Self {
-            config_path: config_dir.join("network.dat"),
+            configuration_store,
             requests: config_dir.join("requests"),
             binaries: resource_dir.join("easytier"),
             operations: Mutex::new(()),
@@ -94,23 +158,22 @@ impl EasyTierCore {
         let _guard = self.operations.lock().await;
         let this = Arc::clone(self);
         tauri::async_runtime::spawn_blocking(move || {
+            let _update_permit = crate::updates::coordination::Permit::network_control()?;
             if !matches!(action, CoreAction::Disconnect) {
                 verify_assets(&this.binaries)?;
             }
-            let config = if matches!(action, CoreAction::Disconnect) {
+            let snapshot = if matches!(action, CoreAction::Disconnect) {
                 None
             } else {
-                let mut config = network_config::load(&this.config_path)?;
-                config.normalize_and_validate(true)?;
-                Some(config)
+                Some(this.configuration_store.connection_snapshot()?)
             };
             let request = HelperRequest {
                 action,
-                config,
+                config: snapshot.as_ref().map(|snapshot| snapshot.config.clone()),
                 device_name,
             };
-            if platform::is_elevated() {
-                perform_helper(request, &this.binaries)?;
+            let applied = if platform::is_elevated() {
+                perform_helper(request, &this.binaries)?
             } else {
                 fs::create_dir_all(&this.requests).map_err(|_| platform::storage_error())?;
                 let stamp = SystemTime::now()
@@ -135,7 +198,12 @@ impl EasyTierCore {
                     .map_err(|_| platform::storage_error())?;
                 file.sync_all().map_err(|_| platform::storage_error())?;
                 drop(file);
-                platform::elevate_helper(&request_file.0)?;
+                platform::elevate_helper(&request_file.0)?
+            };
+            if applied {
+                if let Some(snapshot) = snapshot {
+                    this.configuration_store.mark_applied(snapshot)?;
+                }
             }
             this.status()
         })
@@ -145,7 +213,7 @@ impl EasyTierCore {
 
     pub async fn configuration(self: &Arc<Self>) -> Result<NetworkConfigView, AppError> {
         let _guard = self.operations.lock().await;
-        Ok(network_config::load(&self.config_path)?.view())
+        self.configuration_store.configuration()
     }
 
     pub async fn save_configuration(
@@ -153,37 +221,55 @@ impl EasyTierCore {
         update: NetworkConfigUpdate,
     ) -> Result<NetworkConfigView, AppError> {
         let _guard = self.operations.lock().await;
-        let next = network_config::load(&self.config_path)?.updated(update)?;
-        network_config::save(&self.config_path, &next)?;
-        Ok(next.view())
+        self.configuration_store.save(update)
     }
 
     pub async fn reset_configuration(self: &Arc<Self>) -> Result<NetworkConfigView, AppError> {
         let _guard = self.operations.lock().await;
-        let defaults = NetworkConfig::bundled()?;
-        network_config::save(&self.config_path, &defaults)?;
-        Ok(defaults.view())
+        self.configuration_store.reset()
     }
 
-    pub async fn installed_version(self: &Arc<Self>) -> Option<String> {
+    pub async fn versions(self: &Arc<Self>) -> Result<VersionInfo, AppError> {
         let this = Arc::clone(self);
         tauri::async_runtime::spawn_blocking(move || {
-            verify_assets(&this.binaries).ok()?;
-            let bytes = process::output(
-                &this.binaries.join("easytier-core.exe"),
-                &["--version".into()],
-                Duration::from_secs(3),
-            )
-            .ok()?;
-            let text = String::from_utf8(bytes).ok()?;
-            let version = text.trim().strip_prefix("easytier-core ")?;
-            version
-                .eq(EASYTIER_TARGET_VERSION)
-                .then(|| version.to_owned())
+            let bundled = verify_assets(&this.binaries).is_ok();
+            let owned = platform::service_directory().ok().and_then(|root| {
+                platform::owned_service_binary(&deployment::allowed_binaries(&root))
+                    .ok()
+                    .flatten()
+            });
+            let deployed = owned
+                .as_ref()
+                .and_then(|_| platform::service_description().ok().flatten())
+                .and_then(|description| {
+                    deployment::PublicDeployment::from_description(&description)
+                });
+            let running = if owned.is_some()
+                && bundled
+                && platform::service_state().ok() == Some(ServiceState::Running)
+            {
+                this.rpc::<status::NodeInfo>("node")
+                    .ok()
+                    .filter(|node| node.inst_id == network_config::INSTANCE_ID)
+                    .and_then(|node| status::version(&node.version))
+            } else {
+                None
+            };
+            VersionInfo {
+                app: env!("CARGO_PKG_VERSION").into(),
+                easytier_target: EASYTIER_TARGET_VERSION.into(),
+                easytier_bundled: bundled.then(|| EASYTIER_TARGET_VERSION.into()),
+                easytier_deployed: deployed.as_ref().map(|value| value.core_version.clone()),
+                easytier_running: running,
+                engine_owner_app: deployed
+                    .as_ref()
+                    .map(|value| value.owner_app_version.to_string()),
+                engine_revision: deployed.map(|value| value.engine_revision),
+                protocol: rela_protocol::PROTOCOL_VERSION,
+            }
         })
         .await
-        .ok()
-        .flatten()
+        .map_err(|_| internal_error())
     }
 
     fn status(&self) -> Result<ConnectionStatus, AppError> {
@@ -205,9 +291,9 @@ impl EasyTierCore {
         if state != ServiceState::Running {
             return Ok(result);
         }
-        platform::verify_service_binary(
-            &platform::service_directory()?.join("engine/easytier-core.exe"),
-        )?;
+        platform::owned_service_binary(&deployment::allowed_binaries(
+            &platform::service_directory()?,
+        ))?;
         let node = match self.rpc::<status::NodeInfo>("node") {
             Ok(node) => node,
             Err(_) => {
@@ -230,8 +316,11 @@ impl EasyTierCore {
         let tun_ready = ip.is_some_and(|ip| platform::tun_has_ip(network_config::TUN_NAME, ip));
         result = status::connection_snapshot(&node, &connectors, tun_ready);
         if result.connected {
-            let config = network_config::load(&self.config_path)?;
-            if let Some(gateway) = config.gateway_ip.and_then(|ip| ip.parse().ok()) {
+            if let Some(gateway) = self
+                .configuration_store
+                .running_gateway()?
+                .and_then(|ip| ip.parse().ok())
+            {
                 result.latency_ms = platform::ping(gateway);
                 result.gateway = if result.latency_ms.is_some() {
                     rela_protocol::GatewayState::Online
@@ -247,22 +336,26 @@ impl EasyTierCore {
     }
 
     fn rpc<T: serde::de::DeserializeOwned>(&self, method: &str) -> Result<T, AppError> {
-        let bytes = process::output(
-            &self.binaries.join("easytier-cli.exe"),
-            &[
-                "--rpc-portal".into(),
-                RPC_PORTAL.into(),
-                "--instance-name".into(),
-                network_config::INSTANCE_NAME.into(),
-                "--output".into(),
-                "json".into(),
-                method.into(),
-            ],
-            Duration::from_secs(3),
-        )?;
-        serde_json::from_slice(&bytes)
-            .map_err(|_| AppError::new("core_response_invalid", "网络引擎返回了无法识别的状态。"))
+        rpc(&self.binaries, method)
     }
+}
+
+fn rpc<T: serde::de::DeserializeOwned>(directory: &Path, method: &str) -> Result<T, AppError> {
+    let bytes = process::output(
+        &directory.join("easytier-cli.exe"),
+        &[
+            "--rpc-portal".into(),
+            RPC_PORTAL.into(),
+            "--instance-name".into(),
+            network_config::INSTANCE_NAME.into(),
+            "--output".into(),
+            "json".into(),
+            method.into(),
+        ],
+        Duration::from_secs(3),
+    )?;
+    serde_json::from_slice(&bytes)
+        .map_err(|_| AppError::new("core_response_invalid", "网络引擎返回了无法识别的状态。"))
 }
 
 fn internal_error() -> AppError {
@@ -276,39 +369,21 @@ fn integrity_error() -> AppError {
 }
 
 fn verify_assets(directory: &Path) -> Result<(), AppError> {
+    asset_manifest()?.verify(directory)
+}
+
+fn asset_manifest() -> Result<AssetManifest, AppError> {
     let manifest: AssetManifest =
         serde_json::from_str(include_str!("../../../config/easytier-version.json"))
             .map_err(|_| integrity_error())?;
-    if manifest.version != EASYTIER_TARGET_VERSION {
+    manifest.validate()?;
+    if manifest.version != EASYTIER_TARGET_VERSION || manifest.engine_revision == 0 {
         return Err(integrity_error());
     }
-    for name in FILES {
-        let path = directory.join(name);
-        if fs::symlink_metadata(&path)
-            .map_err(|_| integrity_error())?
-            .file_type()
-            .is_symlink()
-        {
-            return Err(integrity_error());
-        }
-        let mut file = fs::File::open(path).map_err(|_| integrity_error())?;
-        let mut hash = Sha256::new();
-        let mut buffer = [0u8; 65536];
-        loop {
-            let n = file.read(&mut buffer).map_err(|_| integrity_error())?;
-            if n == 0 {
-                break;
-            }
-            hash.update(&buffer[..n]);
-        }
-        if manifest.files.get(*name) != Some(&format!("{:x}", hash.finalize())) {
-            return Err(integrity_error());
-        }
-    }
-    Ok(())
+    Ok(manifest)
 }
 
-fn perform_helper(mut request: HelperRequest, bundled: &Path) -> Result<(), AppError> {
+fn perform_helper(mut request: HelperRequest, bundled: &Path) -> Result<bool, AppError> {
     if !platform::is_elevated() {
         return Err(AppError::new("permission_required", "此操作需要系统授权。"));
     }
@@ -320,84 +395,37 @@ fn perform_helper(mut request: HelperRequest, bundled: &Path) -> Result<(), AppE
     let root = platform::service_directory()?;
     platform::secure_service_directory(&root)?;
     let _control_lock = platform::lock_service_control(&root)?;
-    let engine = root.join("engine");
-    let executable = engine.join("easytier-core.exe");
-    platform::verify_service_binary(&executable)?;
-    let state = platform::service_state()?;
-    if matches!(request.action, CoreAction::Connect) && state == ServiceState::Running {
-        return Ok(());
-    }
-    if !matches!(request.action, CoreAction::Disconnect) {
-        request
-            .config
-            .as_mut()
-            .ok_or_else(internal_error)?
-            .normalize_and_validate(true)?;
-        verify_assets(bundled)?;
-    }
-    if matches!(
-        state,
-        ServiceState::Running | ServiceState::Starting | ServiceState::Stopping
-    ) {
-        if state != ServiceState::Stopping {
-            platform::stop_service()?;
-        }
-        wait_for(ServiceState::Stopped)?;
-    }
+    let mut service = managed_service::ManagedService::new(root.clone());
+    let files = deployment::Files::new(
+        root,
+        platform::secure_service_directory,
+        platform::secure_service_file,
+    );
     if matches!(request.action, CoreAction::Disconnect) {
-        return Ok(());
+        use deployment::Service;
+        // Disconnect never restarts a connection while repairing an interrupted update.
+        service.stop()?;
+        files.recover(&mut service, false)?;
+        return Ok(false);
     }
-    let listener = TcpListener::bind(RPC_PORTAL)
-        .map_err(|_| AppError::new("service_conflict", "网络管理端口已被其他程序占用。"))?;
-    drop(listener);
-    platform::secure_service_directory(&engine)?;
-    for name in FILES {
-        let target = engine.join(name);
-        if target.exists()
-            && fs::symlink_metadata(&target)
-                .map_err(|_| integrity_error())?
-                .file_type()
-                .is_symlink()
-        {
-            return Err(integrity_error());
-        }
-        let bytes = fs::read(bundled.join(name)).map_err(|_| integrity_error())?;
-        platform::atomic_write(&target, &bytes)?;
+    request
+        .config
+        .as_mut()
+        .ok_or_else(internal_error)?
+        .normalize_and_validate(true)?;
+    verify_assets(bundled)?;
+    files.recover(&mut service, true)?;
+    if matches!(request.action, CoreAction::Connect)
+        && platform::service_state()? == ServiceState::Running
+    {
+        return Ok(false);
     }
-    verify_assets(&engine)?;
-    let config_path = root.join("core.toml");
-    let config = request.config.ok_or_else(internal_error)?;
-    platform::atomic_write(
-        &config_path,
-        config.core_toml(&request.device_name)?.as_bytes(),
-    )?;
-    let args: Vec<OsString> = vec![
-        "install".into(),
-        "--display-name".into(),
-        "Rela Network".into(),
-        "--description".into(),
-        "Rela EasyTier network connection".into(),
-        "--disable-autostart".into(),
-        "true".into(),
-        "--core-path".into(),
-        executable.into_os_string(),
-        "--service-work-dir".into(),
-        engine.clone().into_os_string(),
-        "--".into(),
-        "--disable-env-parsing".into(),
-        "--config-file".into(),
-        config_path.into_os_string(),
-        "--rpc-portal".into(),
-        RPC_PORTAL.into(),
-        "--rpc-portal-whitelist".into(),
-        "127.0.0.1/32".into(),
-        "--no-listener".into(),
-    ];
-    if state == ServiceState::NotInstalled {
-        service_command(&engine, &args)?;
-    }
-    platform::start_service()?;
-    wait_for(ServiceState::Running)
+    let config = request
+        .config
+        .ok_or_else(internal_error)?
+        .core_toml(&request.device_name)?;
+    files.apply(bundled, config.as_bytes(), &mut service)?;
+    Ok(true)
 }
 
 fn service_command(directory: &Path, args: &[OsString]) -> Result<(), AppError> {
@@ -453,9 +481,16 @@ pub fn helper_entry() -> Option<i32> {
         perform_helper(request, &bundled)
     })();
     Some(match result {
-        Ok(()) => 0,
+        Ok(true) => 0,
+        Ok(false) => 10,
         Err(error) if error.code == "core_integrity_failed" => 2,
         Err(error) if error.code == "service_conflict" => 3,
+        Err(error) if error.code == "core_downgrade_blocked" => 4,
+        Err(error) if error.code == "core_recovery_required" => 5,
+        Err(error) if error.code == "core_update_rolled_back" => 6,
+        Err(error) if error.code == "credential_migration_required" => 7,
+        Err(error) if error.code == "core_version_unknown" => 8,
+        Err(error) if error.code == "core_application_update_pending" => 9,
         Err(_) => 1,
     })
 }

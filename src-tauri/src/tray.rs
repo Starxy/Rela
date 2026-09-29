@@ -48,6 +48,12 @@ pub fn setup(app: &App) -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn restore_window(app: &AppHandle) {
+    if app
+        .try_state::<std::sync::Arc<crate::updates::gate::Gate>>()
+        .is_some_and(|gate| gate.is_starting())
+    {
+        return;
+    }
     if let Some(window) = app.get_webview_window("main") {
         // 先取消最小化，再显示，避免刚显示的窗口再次被最小化事件隐藏。
         let _ = window.unminimize();

@@ -3,7 +3,10 @@ $ErrorActionPreference = 'Stop'
 $serviceName = 'RelaEasyTier'
 $programData = [Environment]::GetFolderPath('CommonApplicationData')
 $root = [IO.Path]::GetFullPath((Join-Path $programData 'Rela'))
-$expectedBinary = Join-Path $root 'engine\easytier-core.exe'
+$expectedBinaries = @(
+    (Join-Path $root 'engine\easytier-core.exe'),
+    (Join-Path $root 'engine-v2\easytier-core.exe')
+)
 
 function Assert-SafeDirectory {
     if (-not (Test-Path -LiteralPath $root)) { return }
@@ -32,8 +35,16 @@ function Get-RelaService {
     $service = Get-CimInstance Win32_Service -Filter "Name='$serviceName'"
     if ($service) {
         $command = $service.PathName
-        if (-not $command.StartsWith(('"' + $expectedBinary + '" '), [StringComparison]::OrdinalIgnoreCase) -and
-            -not $command.StartsWith(($expectedBinary + ' '), [StringComparison]::OrdinalIgnoreCase)) {
+        $owned = $false
+        foreach ($expectedBinary in $expectedBinaries) {
+            foreach ($binary in @($expectedBinary, ('\\?\' + $expectedBinary))) {
+                if ($command.StartsWith(('"' + $binary + '" '), [StringComparison]::OrdinalIgnoreCase) -or
+                    $command.StartsWith(($binary + ' '), [StringComparison]::OrdinalIgnoreCase)) {
+                    $owned = $true
+                }
+            }
+        }
+        if (-not $owned) {
             throw 'Service path does not belong to Rela. Nothing was changed.'
         }
     }
