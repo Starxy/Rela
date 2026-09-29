@@ -14,7 +14,7 @@ tauri-build = { version = "2", features = [] }
 serde_json.workspace = true
 
 [dependencies]
-tauri = { version = "~2.11.6", features = [] }
+tauri = { version = "~2.11.6", features = ["tray-icon"] }
 rela-protocol.workspace = true
 serde.workspace = true
 serde_json.workspace = true

@@ -3,6 +3,7 @@ pub mod diagnostics;
 pub mod easytier;
 pub mod network_config;
 pub mod platform;
+mod tray;
 
 use std::sync::Arc;
 use tauri::Manager;
@@ -13,8 +14,10 @@ pub fn run() {
             let config = app.path().app_config_dir()?;
             let resources = app.path().resource_dir()?;
             app.manage(Arc::new(easytier::EasyTierCore::new(config, resources)));
+            tray::setup(app)?;
             Ok(())
         })
+        .on_window_event(tray::on_window_event)
         .invoke_handler(tauri::generate_handler![
             commands::get_status,
             commands::connect,
