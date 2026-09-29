@@ -1,0 +1,2 @@
+Rela Portable
+Keep this file beside Rela.exe to store settings, diagnostics, and WebView2 data in ./data/.

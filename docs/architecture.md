@@ -29,6 +29,14 @@ Rela Rust Native
 
 服务独立于 GUI，最小化或关闭主窗口会隐藏到托盘，不调用断开。Native 使用 Tauri TrayIcon 创建托盘图标；左键点击或菜单“打开 Rela”取消最小化、显示并聚焦原窗口；菜单“退出 Rela”直接退出界面进程。仅在托盘创建成功后拦截窗口关闭与最小化事件。当前未配置开机启动、SCM 失败恢复或 Rela 自动恢复。卸载会停止并删除专用服务，保留本地配置目录；升级行为仍需在独立机器验收。
 
+## Portable 分发与存储
+
+`desktop:portable` 先执行 Tauri 无安装器构建，再将 EXE、固定引擎资产、许可和清理工具打包为 ZIP。每次从新临时目录开始，仅复制明确列出的文件，并生成包内文件校验表与 ZIP SHA-256。CI 使用不带真实密钥的 debug 包验证打包流程。
+
+`portable.txt` 位于 EXE 同目录时，`AppPaths` 将配置、诊断和 WebView2 数据目录分别指向该目录下的 `data/config`、`data/logs`、`data/webview`，路径与当前工作目录无关。主窗口在 setup 中构建，以便 WebView2 创建前设置数据目录。安装版继续使用 Tauri 默认用户目录。DPAPI 绑定当前 Windows 用户，数据目录不能作为跨机器密钥迁移方案。
+
+网络服务生命周期保持一致：Portable 首次连接仍创建 `RelaEasyTier`，其受保护工作目录固定在 ProgramData，与安装版共用。包内清理工具要求管理员权限和输入确认，核对服务程序路径、等待服务停止与删除，拒绝目录中的重解析点后再清理服务数据。共享驱动和系统 WebView2 不由该工具卸载。
+
 ## 状态与诊断
 
 每五秒刷新业务状态。Native 调用官方 CLI 查询 `node`、`connector` 和按需查询 `route`，单次命令设置超时并限制输出大小。Core 返回的完整配置可能包含密钥，解析类型只取业务所需字段，不向前端或诊断导出原始 JSON。

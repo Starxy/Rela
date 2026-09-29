@@ -11,6 +11,7 @@
 - 可选校园网关 IPv4 检测、实时诊断和不含密钥的摘要导出。
 - 修改后的配置使用当前 Windows 用户的 DPAPI 加密保存；已保存密钥不回显至前端。
 - 最小化或关闭窗口时隐藏到系统托盘；点击托盘图标恢复，右键菜单可打开或退出 Rela。
+- 提供安装版和 Portable ZIP 免安装版；便携版设置与界面缓存保存在解压目录。
 
 本项目仅开发客户端，使用现有 EasyTier 网络。资源列表、开机启动、自动连接和自动升级仍待开发。浏览器预览使用演示数据，不代表真实网络验证通过。
 
@@ -36,6 +37,20 @@ npm run desktop:build
 ```
 
 输出位于 `target/release/bundle/nsis/`。该包当前用于内部测试；尚未签名，也未完成干净系统上的安装、升级、卸载和真实 VPN 验收。上游随附 `Packet.dll` 的再分发许可也是正式发布前的待解决项，见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+
+### Portable 免安装版
+
+```powershell
+npm run desktop:portable
+```
+
+输出为 `target/release/bundle/portable/Rela_0.1.0_x64-portable.zip`，同时生成 ZIP 的 SHA-256 文件。完整解压到有写入权限的本地 NTFS 文件夹，双击 `Rela.exe` 即可。需要已安装 [Microsoft WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/)。包内含 Core、运行库、许可、使用说明和服务清理工具。
+
+同目录的 `portable.txt` 启用便携模式：设置存入 `data/config`、诊断存入 `data/logs`、WebView2 缓存存入 `data/webview`。移动前退出所有 Rela 界面。已保存网络密钥绑定当前 Windows 用户，换电脑或用户后须恢复默认或重新填写配置。
+
+Portable 省去界面安装步骤，首次连接仍需 UAC 授权并创建 `RelaEasyTier` 服务及 `%ProgramData%/Rela`。该服务与安装版共享，退出界面仍保持连接。移除前退出所有 Rela，以管理员身份运行包内 `Remove-Network-Service.cmd`，输入 `REMOVE` 后清理服务及其数据，再删除解压目录。共享网络驱动、系统 WebView2 和安装版用户配置会保留。
+
+仅重新打包已编译程序可运行 `npm run package:portable`；`-- --debug` 用于 CI 的 debug 包。发行前应使用完整 `desktop:portable` 构建，保证程序、前端和引擎资产一致。打包使用全新临时目录和固定文件清单，不包含用户 `data` 或构建配置源文件。
 
 ### 检查
 
@@ -67,6 +82,7 @@ CI 使用不带真实密钥的 debug 构建，不连接实验室网络。生产�
 ```text
 config/                  构建默认网络配置
 scripts/                 Core 下载校验、隔离连接验证
+packaging/portable/      便携包说明、模式标识和服务清理工具
 src/                     React 界面、业务服务与浏览器演示
 src-tauri/src/commands/   Tauri 业务命令
 src-tauri/src/easytier/   服务生命周期、CLI 与 RPC 状态解析

@@ -15,6 +15,8 @@
     "smoke:core": "node scripts/smoke-easytier.mjs",
     "desktop:dev": "tauri dev",
     "desktop:build": "tauri build",
+    "desktop:portable": "tauri build --no-bundle && node scripts/package-portable.mjs",
+    "package:portable": "node scripts/package-portable.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",

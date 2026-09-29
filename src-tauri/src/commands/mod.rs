@@ -1,4 +1,5 @@
 use crate::{
+    app_paths::AppPaths,
     diagnostics,
     easytier::{CoreAction, EasyTierCore},
     platform,
@@ -76,10 +77,7 @@ pub async fn get_version(core: State<'_, Arc<EasyTierCore>>) -> Result<VersionIn
 }
 
 fn preferences_path(app: &AppHandle) -> Result<PathBuf, AppError> {
-    app.path()
-        .app_config_dir()
-        .map(|dir| dir.join("preferences.json"))
-        .map_err(|_| AppError::new("storage_unavailable", "无法读取本地设置目录。"))
+    Ok(app.state::<AppPaths>().config.join("preferences.json"))
 }
 
 #[tauri::command]
@@ -128,10 +126,7 @@ pub async fn export_logs(
     core: State<'_, Arc<EasyTierCore>>,
 ) -> Result<String, AppError> {
     // 仅序列化白名单业务字段；尚未收集原始日志，避免未经脱敏的内容泄漏。
-    let dir = app
-        .path()
-        .app_log_dir()
-        .map_err(|_| AppError::new("storage_unavailable", "无法读取诊断目录。"))?;
+    let dir = app.state::<AppPaths>().logs.clone();
     fs::create_dir_all(&dir)
         .map_err(|_| AppError::new("storage_unavailable", "无法创建诊断目录。"))?;
     let path = dir.join(format!(

@@ -40,3 +40,5 @@ jobs:
       - run: cargo test --workspace --locked
       - run: npm run smoke:core
       - run: npm run tauri -- build --debug --no-bundle
+      - run: npm run package:portable -- --debug
+      - run: powershell -NoProfile -File scripts/test-portable-cleanup.ps1
