@@ -35,7 +35,7 @@ fn signed_sample_requires_matching_key_purpose_and_unmodified_bytes() {
     assert!(verify_envelope(&signed, Purpose::Software, &keys).is_err());
     assert!(verify_envelope(&signed, Purpose::Resources, &[]).is_err());
     let mut tampered: SignedEnvelope = serde_json::from_slice(&signed).unwrap();
-    tampered.payload = STANDARD.encode(SAMPLE.iter().copied().chain([b' ']).collect::<Vec<_>>());
+    tampered.payload = STANDARD.encode(SAMPLE.iter().copied().chain(*b" ").collect::<Vec<_>>());
     assert!(verify_envelope(
         &serde_json::to_vec(&tampered).unwrap(),
         Purpose::Resources,
