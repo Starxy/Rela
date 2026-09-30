@@ -3,7 +3,6 @@ mod deployment;
 mod managed_service;
 mod process;
 mod status;
-pub mod update_participant;
 
 use crate::{
     distribution::store::ConfigStore,
@@ -158,7 +157,6 @@ impl EasyTierCore {
         let _guard = self.operations.lock().await;
         let this = Arc::clone(self);
         tauri::async_runtime::spawn_blocking(move || {
-            let _update_permit = crate::updates::coordination::Permit::network_control()?;
             if !matches!(action, CoreAction::Disconnect) {
                 verify_assets(&this.binaries)?;
             }
@@ -490,7 +488,6 @@ pub fn helper_entry() -> Option<i32> {
         Err(error) if error.code == "core_update_rolled_back" => 6,
         Err(error) if error.code == "credential_migration_required" => 7,
         Err(error) if error.code == "core_version_unknown" => 8,
-        Err(error) if error.code == "core_application_update_pending" => 9,
         Err(_) => 1,
     })
 }

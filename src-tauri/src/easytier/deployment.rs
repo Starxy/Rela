@@ -13,7 +13,6 @@ use std::{
 
 const RECORD: &str = "deployment.json";
 const TRANSACTION: &str = "engine-transaction";
-const APPLICATION_RECEIPT: &str = "application-update.json";
 const DESCRIPTION_PREFIX: &str = "Rela network deployment v1: ";
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -126,23 +125,7 @@ pub(super) trait Service {
 #[serde(rename_all = "snake_case")]
 enum Phase {
     Prepared,
-    AwaitingApplication,
     Committed,
-}
-
-#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub(super) enum Decision {
-    Commit,
-    Rollback,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ApplicationReceipt {
-    schema_version: u32,
-    id: String,
-    decision: Decision,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -156,8 +139,6 @@ struct Journal {
     old_config_credential: bool,
     previous_service: ServiceSnapshot,
     next: Deployment,
-    #[serde(default)]
-    application_id: Option<String>,
     #[serde(default)]
     next_config_sha256: Option<String>,
     #[serde(default)]
@@ -175,7 +156,6 @@ pub(super) enum Step {
     Registered,
     Started,
     Published,
-    AwaitingApplication,
     Committed,
 }
 
@@ -231,9 +211,6 @@ impl Files {
         let Some(journal) = self.read_journal()? else {
             return Ok(());
         };
-        if journal.application_id.is_some() {
-            return Err(application_pending());
-        }
         if journal.phase == Phase::Committed {
             self.verify_live(&journal.next)?;
             service.publish(&journal.next.public())?;
@@ -306,176 +283,13 @@ impl Files {
         {
             return Err(recovery_error());
         }
-        if let Some(id) = &journal.application_id {
-            validate_application_id(id)?;
-            if journal.next_config_sha256.is_none() || journal.old_config_sha256.is_none() {
-                return Err(recovery_error());
-            }
-        }
         for hash in [&journal.next_config_sha256, &journal.old_config_sha256]
             .into_iter()
             .flatten()
         {
-            validate_application_id(hash)?;
-        }
-        if journal.phase == Phase::AwaitingApplication && journal.application_id.is_none() {
-            return Err(recovery_error());
+            validate_digest(hash)?;
         }
         Ok(Some(journal))
-    }
-
-    fn write_receipt(&self, id: &str, decision: Decision) -> Result<(), AppError> {
-        let path = self.root.join(APPLICATION_RECEIPT);
-        if plain(&path)? {
-            (self.protect_file)(&path)?;
-        }
-        platform::atomic_write(
-            &path,
-            &serde_json::to_vec(&ApplicationReceipt {
-                schema_version: 1,
-                id: id.into(),
-                decision,
-            })
-            .map_err(|_| recovery_error())?,
-        )
-    }
-    fn receipt(&self, id: &str) -> Result<Option<Decision>, AppError> {
-        let path = self.root.join(APPLICATION_RECEIPT);
-        if !plain(&path)? {
-            return Ok(None);
-        }
-        (self.protect_file)(&path)?;
-        let receipt: ApplicationReceipt =
-            serde_json::from_slice(&read(&path, 1024)?).map_err(|_| recovery_error())?;
-        if receipt.schema_version != 1 {
-            return Err(recovery_error());
-        }
-        validate_application_id(&receipt.id)?;
-        Ok((receipt.id == id).then_some(receipt.decision))
-    }
-
-    pub fn prepare_application(
-        &self,
-        bundled: &Path,
-        id: &str,
-        service: &mut impl Service,
-    ) -> Result<bool, AppError> {
-        self.prepare_application_observed(bundled, id, Deployment::bundled()?, service, |_| Ok(()))
-    }
-    fn prepare_application_observed(
-        &self,
-        bundled: &Path,
-        id: &str,
-        next: Deployment,
-        service: &mut impl Service,
-        observer: impl FnMut(Step) -> Result<(), AppError>,
-    ) -> Result<bool, AppError> {
-        validate_application_id(id)?;
-        if let Some(journal) = self.read_journal()? {
-            if journal.application_id.is_none() {
-                self.recover(service, true)?;
-            } else {
-                if journal.application_id.as_deref() != Some(id)
-                    || journal.phase != Phase::AwaitingApplication
-                {
-                    return Err(application_pending());
-                }
-                if serde_json::to_vec(&journal.next).ok() != serde_json::to_vec(&next).ok() {
-                    return Err(integrity_error());
-                }
-                self.application_ready(&journal, service)?;
-                return Ok(true);
-            }
-        }
-        if self.receipt(id)?.is_some() {
-            return Err(application_pending());
-        }
-        // Updating the GUI does not install a service or initiate a new connection.
-        if service.snapshot()?.location.is_none() {
-            return Ok(false);
-        }
-        let config = read(&self.config(), 64 * 1024)?;
-        if !credential_config(&config) {
-            return Err(AppError::new(
-                "credential_migration_required",
-                "请先填写 credential 并完成网络配置迁移，再更新网络引擎。",
-            ));
-        }
-        self.apply_inner(bundled, &config, next, Some(id), service, observer)?;
-        Ok(true)
-    }
-
-    /// The application controller supplies its durable decision. A lost helper
-    /// connection leaves this journal pending; timeout alone never chooses rollback.
-    pub fn resolve_application(
-        &self,
-        id: &str,
-        decision: Decision,
-        service: &mut impl Service,
-    ) -> Result<(), AppError> {
-        validate_application_id(id)?;
-        let Some(mut journal) = self.read_journal()? else {
-            let recorded = self.receipt(id)?;
-            return if recorded == Some(decision)
-                || (recorded.is_none() && decision == Decision::Rollback)
-            {
-                Ok(())
-            } else {
-                Err(application_pending())
-            };
-        };
-        if journal.application_id.as_deref() != Some(id) {
-            return Err(application_pending());
-        }
-        if let Some(recorded) = self.receipt(id)? {
-            if recorded != decision {
-                return Err(application_pending());
-            }
-        }
-        match decision {
-            Decision::Commit => {
-                if journal.phase == Phase::Prepared {
-                    return Err(application_pending());
-                }
-                self.application_ready(&journal, service)?;
-                if journal.phase != Phase::Committed {
-                    journal.phase = Phase::Committed;
-                    self.write_journal(&journal)?;
-                }
-                self.write_receipt(id, Decision::Commit)?;
-                self.cleanup()
-            }
-            Decision::Rollback => {
-                if journal.phase == Phase::Committed {
-                    return Err(application_pending());
-                }
-                self.rollback(&journal, service, true)
-            }
-        }
-    }
-    fn application_ready(
-        &self,
-        journal: &Journal,
-        service: &mut impl Service,
-    ) -> Result<(), AppError> {
-        self.verify_live(&journal.next)?;
-        if journal.next_config_sha256.as_ref() != Some(&digest(&read(&self.config(), 64 * 1024)?)) {
-            return Err(integrity_error());
-        }
-        let actual = service.snapshot()?;
-        if actual.location != Some(Location::Managed) {
-            return Err(recovery_error());
-        }
-        if journal.previous_service.was_running {
-            if !actual.was_running {
-                service.start_and_verify(&journal.next.assets.version)?;
-            } else {
-                service.verify_running(&journal.next.assets.version)?;
-            }
-        } else if actual.was_running {
-            return Err(recovery_error());
-        }
-        service.publish(&journal.next.public())
     }
 
     fn existing(
@@ -557,18 +371,6 @@ impl Files {
         config: &[u8],
         next: Deployment,
         service: &mut impl Service,
-        observer: impl FnMut(Step) -> Result<(), AppError>,
-    ) -> Result<(), AppError> {
-        self.apply_inner(bundled, config, next, None, service, observer)
-    }
-
-    fn apply_inner(
-        &self,
-        bundled: &Path,
-        config: &[u8],
-        next: Deployment,
-        application_id: Option<&str>,
-        service: &mut impl Service,
         mut observer: impl FnMut(Step) -> Result<(), AppError>,
     ) -> Result<(), AppError> {
         self.recover(service, true)?;
@@ -631,7 +433,6 @@ impl Files {
             old_config_credential,
             previous_service,
             next,
-            application_id: application_id.map(str::to_owned),
             next_config_sha256: Some(digest(config)),
             old_config_sha256: old_config.as_ref().map(|bytes| digest(bytes)),
         };
@@ -658,26 +459,16 @@ impl Files {
             self.verify_live(&journal.next)?;
             service.register(Location::Managed)?;
             observer(Step::Registered)?;
-            if application_id.is_none() || journal.previous_service.was_running {
-                service.start_and_verify(&journal.next.assets.version)?;
-            }
+            service.start_and_verify(&journal.next.assets.version)?;
             observer(Step::Started)?;
             service.publish(&journal.next.public())?;
             observer(Step::Published)?;
-            journal.phase = if application_id.is_some() {
-                Phase::AwaitingApplication
-            } else {
-                Phase::Committed
-            };
+            journal.phase = Phase::Committed;
             if let Err(error) = self.write_journal(&journal) {
                 journal.phase = Phase::Prepared;
                 return Err(error);
             }
-            observer(if application_id.is_some() {
-                Step::AwaitingApplication
-            } else {
-                Step::Committed
-            })?;
+            observer(Step::Committed)?;
             Ok(())
         })();
         if let Err(error) = result {
@@ -696,11 +487,7 @@ impl Files {
             ));
         }
         // A committed journal is kept if cleanup fails; next operation safely retries cleanup.
-        if application_id.is_some() {
-            Ok(())
-        } else {
-            self.cleanup()
-        }
+        self.cleanup()
     }
 
     fn verify_live(&self, deployment: &Deployment) -> Result<(), AppError> {
@@ -782,9 +569,6 @@ impl Files {
                         .version,
                 )
                 .map_err(|_| recovery_error())?;
-        }
-        if let Some(id) = &journal.application_id {
-            self.write_receipt(id, Decision::Rollback)?;
         }
         self.cleanup()?;
         if restore_running && journal.previous_service.was_running && !journal.old_config_credential
@@ -967,22 +751,15 @@ fn recovery_error() -> AppError {
     )
 }
 
-pub(super) fn validate_application_id(id: &str) -> Result<(), AppError> {
+fn validate_digest(id: &str) -> Result<(), AppError> {
     if id.len() != 64
         || !id
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
     {
-        return Err(application_pending());
+        return Err(integrity_error());
     }
     Ok(())
 }
-fn application_pending() -> AppError {
-    AppError::new(
-        "core_application_update_pending",
-        "软件更新尚未完成，请使用发起更新的 Rela 副本完成恢复。",
-    )
-}
-
 #[cfg(test)]
 mod tests;

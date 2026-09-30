@@ -31,19 +31,12 @@ pub async fn connect(
     app: AppHandle,
     core: State<'_, Arc<EasyTierCore>>,
 ) -> Result<ConnectionStatus, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     core.control(CoreAction::Connect, get_preferences(app)?.device_name)
         .await
 }
 
 #[tauri::command]
-pub async fn disconnect(
-    app: AppHandle,
-    core: State<'_, Arc<EasyTierCore>>,
-) -> Result<ConnectionStatus, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
+pub async fn disconnect(core: State<'_, Arc<EasyTierCore>>) -> Result<ConnectionStatus, AppError> {
     // 损坏的偏好文件不能阻止停止网络服务。
     core.control(CoreAction::Disconnect, Preferences::default().device_name)
         .await
@@ -54,8 +47,6 @@ pub async fn reconnect(
     app: AppHandle,
     core: State<'_, Arc<EasyTierCore>>,
 ) -> Result<ConnectionStatus, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     core.control(CoreAction::Reconnect, get_preferences(app)?.device_name)
         .await
 }
@@ -72,13 +63,10 @@ pub async fn get_resources(
 
 #[tauri::command]
 pub async fn open_resource(
-    app: AppHandle,
     id: String,
     core: State<'_, Arc<EasyTierCore>>,
     resources: State<'_, Arc<ResourceManager>>,
 ) -> Result<(), AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     if !core.get_status().await?.connected {
         return Err(AppError::new(
             "resource_unavailable",
@@ -100,11 +88,8 @@ pub fn get_resource_sync(
 
 #[tauri::command]
 pub async fn refresh_resources(
-    app: AppHandle,
     resources: State<'_, Arc<ResourceManager>>,
 ) -> Result<ResourceSyncStatus, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     resources.refresh(true).await
 }
 
@@ -117,22 +102,16 @@ pub fn get_software_update(
 
 #[tauri::command]
 pub async fn check_software_update(
-    app: AppHandle,
     software: State<'_, Arc<SoftwareManager>>,
 ) -> Result<SoftwareUpdateStatus, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     software.check().await
 }
 
 #[tauri::command]
 pub fn set_update_channel(
-    app: AppHandle,
     software: State<'_, Arc<SoftwareManager>>,
     channel: UpdateChannel,
 ) -> Result<SoftwareUpdateStatus, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     software.set_channel(channel)
 }
 
@@ -172,8 +151,6 @@ pub fn save_preferences(
     app: AppHandle,
     mut preferences: Preferences,
 ) -> Result<Preferences, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     preferences.device_name = preferences.device_name.trim().into();
     preferences.validate()?;
     if preferences.auto_connect || preferences.launch_at_login {
@@ -199,8 +176,6 @@ pub async fn export_logs(
     app: AppHandle,
     core: State<'_, Arc<EasyTierCore>>,
 ) -> Result<String, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     // 仅序列化白名单业务字段；尚未收集原始日志，避免未经脱敏的内容泄漏。
     let dir = app.state::<AppPaths>().logs.clone();
     fs::create_dir_all(&dir)
@@ -230,141 +205,45 @@ pub async fn get_network_config(
 
 #[tauri::command]
 pub async fn save_network_config(
-    app: AppHandle,
     core: State<'_, Arc<EasyTierCore>>,
     config: NetworkConfigUpdate,
 ) -> Result<NetworkConfigView, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     core.save_configuration(config).await
 }
 
 #[tauri::command]
 pub async fn reset_network_config(
-    app: AppHandle,
     core: State<'_, Arc<EasyTierCore>>,
     resources: State<'_, Arc<ResourceManager>>,
 ) -> Result<NetworkConfigView, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _operation = gate.operation()?;
     let view = core.reset_configuration().await?;
     let resources = Arc::clone(resources.inner());
     tauri::async_runtime::spawn(async move {
-        if let Ok(_permit) = gate.operation() {
-            let _ = resources.refresh(false).await;
-        }
+        let _ = resources.refresh(false).await;
     });
     Ok(view)
 }
 
-/// Called after React mounts. The candidate remains hidden until this succeeds.
+/// Only the currently verified version can be opened; the UI supplies no URL.
 #[tauri::command]
-pub async fn complete_update_startup(app: AppHandle) -> Result<Option<String>, AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    if !gate.begin_completion() {
-        #[cfg(windows)]
-        {
-            return Ok(app
-                .state::<Arc<crate::updates::startup::Startup>>()
-                .notice
-                .clone());
-        }
-        #[cfg(not(windows))]
-        {
-            return Ok(None);
-        }
-    }
-    #[cfg(windows)]
-    {
-        let startup = Arc::clone(app.state::<Arc<crate::updates::startup::Startup>>().inner());
-        let resources = Arc::clone(app.state::<Arc<ResourceManager>>().inner());
-        let software = Arc::clone(app.state::<Arc<SoftwareManager>>().inner());
-        let check_app = app.clone();
-        let result = tauri::async_runtime::spawn_blocking(move || {
-            get_preferences(check_app)?;
-            resources.store.configuration()?;
-            resources.status()?;
-            software.status()?;
-            startup.complete()
-        })
-        .await
-        .map_err(|_| AppError::new("update_startup_failed", "新版初始化未完成。"))
-        .and_then(|value| value);
-        if let Err(error) = result {
-            gate.failed();
-            app.exit(1);
-            return Err(error);
-        }
-    }
-    gate.completed();
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-    crate::start_background_refresh(&app);
-    Ok(Some(format!(
-        "已更新到 Rela {}。",
-        env!("CARGO_PKG_VERSION")
-    )))
-}
-
-#[tauri::command]
-pub fn get_update_progress(app: AppHandle) -> Result<rela_protocol::UpdateProgress, AppError> {
-    app.state::<Arc<crate::updates::manager::UpdateManager>>()
-        .status()
-}
-
-#[tauri::command]
-pub async fn install_software_update(app: AppHandle, version: String) -> Result<(), AppError> {
-    let gate = Arc::clone(app.state::<Arc<crate::updates::gate::Gate>>().inner());
-    let _exclusive = gate.begin_update()?;
-    let manager = Arc::clone(
-        app.state::<Arc<crate::updates::manager::UpdateManager>>()
-            .inner(),
-    );
-    let software = Arc::clone(app.state::<Arc<SoftwareManager>>().inner());
-    let result: Result<(), AppError> = async {
-        let selected = software.select(&version)?;
-        let installed = app.state::<AppPaths>().webview.is_none();
-        let total = selected.manifest.portable.size
-            + if installed {
-                selected.manifest.installer.size
-            } else {
-                0
-            };
-        manager.begin(version, total)?;
-        #[cfg(windows)]
-        {
-            if installed {
-                let config = app.state::<AppPaths>().config.clone();
-                crate::updates::installed_controller::start(selected, &config, |received, total| {
-                    manager.downloaded(received, total)
-                })
-                .await
-            } else {
-                crate::updates::controller::start(selected, |received, total| {
-                    manager.downloaded(received, total)
-                })
-                .await
-            }
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = selected;
-            Err(AppError::new("not_supported", "此平台暂不支持自动更新。"))
-        }
-    }
-    .await;
-    match result {
-        Ok(()) => {
-            manager.restarting();
-            app.exit(0);
-            Ok(())
-        }
-        Err(error) => {
-            manager.failed(&error);
-            gate.update_failed();
-            Err(error)
-        }
-    }
+pub fn open_software_release(
+    software: State<'_, Arc<SoftwareManager>>,
+    version: String,
+) -> Result<(), AppError> {
+    let url = software.release_url(&version)?;
+    platform::open_resource(&rela_manifests::Resource {
+        id: "rela-release".into(),
+        name: "Rela Release".into(),
+        kind: rela_manifests::ResourceKind::Web,
+        address: url,
+        description: String::new(),
+        port: None,
+        username: None,
+    })
+    .map_err(|_| {
+        AppError::new(
+            "release_open_failed",
+            "无法打开 GitHub Release 页面，请检查系统默认浏览器。",
+        )
+    })
 }

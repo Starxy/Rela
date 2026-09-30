@@ -61,7 +61,6 @@ export function createPreviewService(
   let localOverride = false;
   let software: SoftwareUpdateStatus = {
     channel: 'stable',
-    install_kind: 'installer',
     current_version: '0.1.0',
     checking: false,
     last_checked: null,
@@ -119,9 +118,6 @@ export function createPreviewService(
 
   const service: RelaService = {
     mode: 'preview',
-    async completeStartup() {
-      return null;
-    },
     async getStatus() {
       return status();
     },
@@ -217,7 +213,7 @@ export function createPreviewService(
         easytier_running: null,
         engine_owner_app: null,
         engine_revision: null,
-        protocol: 8,
+        protocol: 9,
       };
     },
     async getPreferences() {
@@ -314,17 +310,14 @@ export function createPreviewService(
       software = { ...software, channel, last_checked: null, candidate: null };
       return structuredClone(software);
     },
-    async getUpdateProgress() {
-      return {
-        phase: 'idle',
-        version: null,
-        downloaded: 0,
-        total: 0,
-        error: null,
-      };
-    },
-    async installSoftwareUpdate() {
-      throw new Error('请在 Windows 桌面客户端中更新软件。');
+    async openSoftwareRelease(version) {
+      if (software.candidate?.version !== version)
+        throw new Error('更新信息已改变，请重新检查版本。');
+      window.open(
+        software.candidate.release_url,
+        '_blank',
+        'noopener,noreferrer',
+      );
     },
     async savePreferences(next) {
       const normalized = { ...next, device_name: next.device_name.trim() };

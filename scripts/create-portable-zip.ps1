@@ -18,7 +18,7 @@ try {
                 throw 'Portable source contains an unsafe file path.'
             }
             # .NET Framework CreateFromDirectory emits backslashes on Windows.
-            # ZIP entry paths must use forward slashes for the strict updater.
+            # ZIP entry paths must use forward slashes for portable ZIP compatibility.
             $entryName = $rootName + '/' + $file.FullName.Substring($prefix.Length).Replace('\', '/')
             [IO.Compression.ZipFileExtensions]::CreateEntryFromFile(
                 $archive, $file.FullName, $entryName, [IO.Compression.CompressionLevel]::Optimal

@@ -145,11 +145,6 @@ try {
       path.join(workspace, 'scripts/package-portable.mjs'),
       ...(profile === 'debug' ? ['--debug'] : []),
     ]);
-    const override = path.join(session, 'unsigned-bundle.json');
-    await writeFile(
-      override,
-      JSON.stringify({ bundle: { createUpdaterArtifacts: false } }),
-    );
     await step('installer', process.execPath, [
       tauri,
       'bundle',
@@ -157,16 +152,12 @@ try {
       '--ci',
       '--bundles',
       'nsis',
-      '--config',
-      override,
       ...(profile === 'debug' ? ['--debug'] : []),
     ]);
     const binary = path.join(target, profile, 'rela.exe');
-    const payload = path.join(target, profile, 'bundle/payload/Rela.exe');
     const suffix = profile === 'debug' ? '-debug' : '';
     const artifacts = [
       ['binary', binary],
-      ['binary', payload],
       ['frontend', path.join(workspace, 'dist')],
       [
         'portable',
@@ -174,14 +165,6 @@ try {
           target,
           profile,
           `bundle/portable/Rela_${input.version}_x64-portable${suffix}.zip`,
-        ),
-      ],
-      [
-        'update',
-        path.join(
-          target,
-          profile,
-          `bundle/portable/Rela_${input.version}_x64-update${suffix}.zip`,
         ),
       ],
       [
@@ -205,7 +188,7 @@ try {
         profile,
         pin: input.engine_manifest,
         needles,
-        expectedBinary: payload,
+        expectedBinary: kind === 'portable' ? binary : undefined,
       });
       const name = `artifact-${index}-${kind}.json`;
       await writeFile(
@@ -221,7 +204,7 @@ try {
       await save();
       if (!scan.passed) throw new ScanFailure('artifact_scan_failed');
     }
-    // The generated updater does not copy a pre-existing data/ tree. Record the
+    // The generated packages contain only the allowlisted files. Record the
     // exact archive report and snapshot, never developer environment values.
     record.complete = true;
     record.passed = true;

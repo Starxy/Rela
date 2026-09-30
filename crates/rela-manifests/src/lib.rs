@@ -348,16 +348,6 @@ pub enum Channel {
     Test,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct Package {
-    pub url: String,
-    pub size: u64,
-    pub sha256: String,
-    /// Tauri/minisign artifact signature, independent of the manifest signature.
-    pub signature: String,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SoftwareManifest {
@@ -368,11 +358,6 @@ pub struct SoftwareManifest {
     pub target: String,
     pub notes: String,
     pub published_at: String,
-    pub core_version: String,
-    /// Minimum Rela version whose stored state can be upgraded automatically.
-    pub minimum_app_version: Version,
-    pub installer: Package,
-    pub portable: Package,
 }
 
 impl SoftwareManifest {
@@ -385,7 +370,7 @@ impl SoftwareManifest {
     }
 
     pub fn validate(&self, channel: Channel) -> Result<()> {
-        require(self.schema_version == 1, "软件清单格式版本不受支持。")?;
+        require(self.schema_version == 2, "软件清单格式版本不受支持。")?;
         check_revision(self.revision, "", None)?;
         require(
             self.channel == channel && (channel != Channel::Stable || self.version.pre.is_empty()),
@@ -393,61 +378,18 @@ impl SoftwareManifest {
         )?;
         require(self.target == "windows-x86_64", "软件架构不受支持。")?;
         require(
-            self.minimum_app_version <= self.version && self.version.build.is_empty(),
+            self.version.build.is_empty() && self.version.to_string().len() <= 128,
             "软件版本范围无效。",
         )?;
         require(
-            self.notes.len() <= 32768
-                && valid_text(&self.published_at, 64)
-                && valid_text(&self.core_version, 128),
-            "软件说明或引擎版本无效。",
+            self.notes.len() <= 32768 && valid_text(&self.published_at, 64),
+            "软件说明或发布时间无效。",
         )?;
-        self.installer.validate(&self.version, ".exe")?;
-        self.portable.validate(&self.version, ".zip")?;
         Ok(())
     }
 
-    pub fn newer_than(&self, current: &Version) -> Result<bool> {
-        require(
-            current >= &self.minimum_app_version,
-            "当前版本需要先手动升级。",
-        )?;
-        Ok(&self.version > current)
-    }
-}
-
-impl Package {
-    fn validate(&self, version: &Version, extension: &str) -> Result<()> {
-        require(
-            (1..=2 * 1024 * 1024 * 1024).contains(&self.size)
-                && self.sha256.len() == 64
-                && self
-                    .sha256
-                    .bytes()
-                    .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-                && !self.signature.is_empty()
-                && self.signature.len() <= 4096
-                && STANDARD.decode(&self.signature).is_ok(),
-            "软件包校验信息无效。",
-        )?;
-        let url = Url::parse(&self.url).map_err(|_| ManifestError("软件包地址无效。"))?;
-        let prefix = format!("{REPOSITORY}/releases/download/v{version}/");
-        let file = self.url.strip_prefix(&prefix).unwrap_or("");
-        require(
-            url.scheme() == "https"
-                && url.username().is_empty()
-                && url.password().is_none()
-                && url.query().is_none()
-                && url.fragment().is_none()
-                && !file.is_empty()
-                && !file.contains(['/', '\\', '%'])
-                && file.ends_with(extension)
-                && file
-                    .bytes()
-                    .all(|c| c.is_ascii_alphanumeric() || b"._-+".contains(&c)),
-            "软件包必须固定到本仓库的版本 Release。",
-        )?;
-        Ok(())
+    pub fn release_url(&self) -> String {
+        format!("{REPOSITORY}/releases/tag/v{}", self.version)
     }
 }
 

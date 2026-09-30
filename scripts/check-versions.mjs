@@ -9,30 +9,13 @@ const version = cargo.match(
   /\[workspace\.package\]\s*\r?\nversion\s*=\s*"([^"]+)"/,
 )?.[1];
 if (!version) throw new Error('Cargo 工作区版本缺失。');
-const [pkg, lock, tauri, core, packageKey] = await Promise.all([
+const [pkg, lock, tauri, core] = await Promise.all([
   json('package.json'),
   json('package-lock.json'),
   json('src-tauri/tauri.conf.json'),
   json('config/easytier-version.json'),
-  json('config/package-signing.json'),
 ]);
-const updater = tauri.plugins?.updater;
 assertResourceMap(tauri);
-if (
-  packageKey.schema_version !== 1 ||
-  updater?.pubkey !== packageKey.public_key ||
-  updater.requireSignedVersion !== true ||
-  updater.allowDowngrades === true ||
-  updater.dangerousAcceptInvalidCerts === true ||
-  updater.dangerousAcceptInvalidHostnames === true ||
-  updater.dangerousInsecureTransportProtocol !== true ||
-  !Array.isArray(updater.endpoints) ||
-  updater.endpoints.length !== 0 ||
-  updater.windows?.installMode !== 'passive' ||
-  (updater.windows.installerArgs?.length ?? 0) !== 0 ||
-  tauri.bundle.createUpdaterArtifacts !== true
-)
-  throw new Error('Updater 必须使用一致的包公钥、签名版本和受限本机适配器。');
 if (!Number.isSafeInteger(core.engine_revision) || core.engine_revision < 1)
   throw new Error('Core 必须有正整数 engine_revision；更换引擎内容时需递增。');
 for (const [source, value] of Object.entries({

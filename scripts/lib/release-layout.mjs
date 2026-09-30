@@ -21,7 +21,7 @@ export const commonFiles = [
   'easytier/manifest.json',
   ...licenseNames.map((name) => `third-party-licenses/${name}`),
 ];
-export const updateFiles = [...commonFiles, 'README.txt'];
+export const portableFiles = [...commonFiles, 'README.txt', 'portable.txt'];
 export const nsisPlugins = [
   'System.dll',
   'modern-wizard.bmp',
@@ -30,7 +30,6 @@ export const nsisPlugins = [
   'StartMenu.dll',
   'LangDLL.dll',
   'NSISdl.dll',
-  'RelaUpdate.exe',
 ];
 export const resourceMap = {
   ...Object.fromEntries(

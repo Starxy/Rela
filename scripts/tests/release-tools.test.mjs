@@ -12,7 +12,7 @@ import {
   readNeedles,
 } from '../lib/release-scan.mjs';
 import {
-  updateFiles,
+  portableFiles,
   engineNames,
   assertResourceMap,
   resourceMap,
@@ -75,9 +75,12 @@ async function fixture() {
   const directory = await mkdtemp(
     path.join(os.tmpdir(), 'rela-release-scan-test-'),
   );
-  const stem = 'Rela_0.2.0_x64-update';
+  const stem = 'Rela_0.2.0_x64-portable-debug';
   const files = Object.fromEntries(
-    updateFiles.map((name) => [name, Buffer.from(`public synthetic ${name}`)]),
+    portableFiles.map((name) => [
+      name,
+      Buffer.from(`public synthetic ${name}`),
+    ]),
   );
   const pin = {
     version: 'fixture-core',
@@ -89,12 +92,8 @@ async function fixture() {
   files['easytier/manifest.json'] = Buffer.from(JSON.stringify(pin));
   async function write(extra = []) {
     const index = {
-      schema_version: 1,
       version: '0.2.0',
-      target: 'windows-x86_64',
       profile: 'debug',
-      core_version: pin.version,
-      engine_revision: pin.engine_revision,
       files: Object.fromEntries(
         Object.entries(files).map(([name, bytes]) => [name, sha256(bytes)]),
       ),
@@ -120,7 +119,7 @@ async function fixture() {
     scan: (artifact, options = {}) =>
       scanArtifact({
         artifact,
-        kind: 'update',
+        kind: 'portable',
         version: '0.2.0',
         profile: 'debug',
         pin,
@@ -172,7 +171,7 @@ test('listing rejects duplicates, traversal, links, encryption, oversize and for
     row('ok').replace('Size = 12', 'Size = 9000000000'),
     row('ok', '\nPath = replacement'),
   ])
-    assert.throws(() => parseListing(listing, 'update'));
+    assert.throws(() => parseListing(listing, 'portable'));
   const missing = parseListing(
     'Path = file\nSize = \nMethod = LZMA\n',
     'installer',
@@ -311,7 +310,7 @@ test('clean input selection excludes local configuration, runtime data, private 
   assert.ok(!JSON.stringify(env).includes(canary));
 });
 
-test('resource allowlist matches Rust updater payload and rejects directory globs', async () => {
+test('resource allowlist matches packaging and rejects directory globs', async () => {
   const tauri = JSON.parse(
     await readFile(
       new URL('../../src-tauri/tauri.conf.json', import.meta.url),
@@ -324,13 +323,12 @@ test('resource allowlist matches Rust updater payload and rejects directory glob
       bundle: { resources: { ...resourceMap, '../data/': 'data/' } },
     }),
   );
-  const source = await readFile(
-    new URL('../../src-tauri/src/distribution/portable.rs', import.meta.url),
-    'utf8',
+  assert.deepEqual(
+    Object.values(resourceMap).sort(),
+    portableFiles
+      .filter(
+        (name) => !['Rela.exe', 'README.txt', 'portable.txt'].includes(name),
+      )
+      .sort(),
   );
-  const array = source.match(
-    /pub const UPDATE_FILES: &\[&str\] = &\[([\s\S]*?)\];/,
-  )[1];
-  const names = [...array.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
-  assert.deepEqual(names.sort(), [...updateFiles].sort());
 });

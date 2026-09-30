@@ -1,5 +1,5 @@
 import { Settings2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { ConnectionDetails } from './components/ConnectionDetails';
 import { Diagnostics } from './components/Diagnostics';
 import { Modal } from './components/Modal';
@@ -19,16 +19,8 @@ type ModalView = keyof typeof modalTitles;
 
 export default function App({ service }: { service: RelaService }) {
   const [modal, setModal] = useState<ModalView | null>(null);
-  const [startupNotice, setStartupNotice] = useState<string | null>(null);
   const rela = useRela(service);
-
-  useEffect(() => {
-    // Native exits an unready candidate so the controller can restore the old app.
-    void service
-      .completeStartup()
-      .then(setStartupNotice)
-      .catch(() => {});
-  }, [service]);
+  const candidate = rela.software?.candidate;
 
   const showDiagnostics = () => {
     setModal('diagnostics');
@@ -51,6 +43,18 @@ export default function App({ service }: { service: RelaService }) {
           <Settings2 size={19} aria-hidden="true" />
         </button>
       </header>
+      {candidate && (
+        <div className="update-notice" role="status">
+          <span>发现 Rela {candidate.version}，请手动更新。</span>
+          <button
+            className="button secondary"
+            disabled={rela.busy === 'release'}
+            onClick={() => void rela.openSoftwareRelease(candidate.version)}
+          >
+            前往 GitHub 下载
+          </button>
+        </div>
+      )}
       <Home
         status={rela.status}
         sync={rela.sync}
@@ -105,14 +109,13 @@ export default function App({ service }: { service: RelaService }) {
           )}
         </Modal>
       )}
-      {!modal && (rela.notice || startupNotice) && (
+      {!modal && rela.notice && (
         <div className="toast" role="status">
-          <span>{rela.notice || startupNotice}</span>
+          <span>{rela.notice}</span>
           <button
             className="icon-button"
             onClick={() => {
               rela.dismissNotice();
-              setStartupNotice(null);
             }}
             aria-label="关闭提示"
           >

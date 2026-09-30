@@ -34,7 +34,6 @@ const exact = new Set([
   'config/distribution.json',
   'config/easytier-version.json',
   'config/easytier-legacy.json',
-  'config/package-signing.json',
   'config/resources.example.json',
   ...licenseNames.map((name) => `third-party-licenses/${name}`),
   ...[
@@ -84,7 +83,7 @@ export function selectSourcePaths(paths) {
 export async function prepareInputs(root, destination) {
   await plain(root, true);
   await mkdir(destination); // Fresh snapshot only; never overlay an old build.
-  let bytes;
+  let bytes, deleted;
   try {
     bytes = execFileSync(
       'git',
@@ -96,11 +95,25 @@ export async function prepareInputs(root, destination) {
         stdio: ['ignore', 'pipe', 'pipe'],
       },
     );
+    deleted = new Set(
+      execFileSync('git', ['ls-files', '-z', '--deleted'], {
+        cwd: root,
+        windowsHide: true,
+        maxBuffer: 4 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+        .toString('utf8')
+        .split('\0')
+        .filter(Boolean),
+    );
   } catch {
     throw new ScanFailure('source_inventory_failed');
   }
   const paths = selectSourcePaths(
-    bytes.toString('utf8').split('\0').filter(Boolean),
+    bytes
+      .toString('utf8')
+      .split('\0')
+      .filter((name) => name && !deleted.has(name)),
   );
   for (const required of exact)
     if (!paths.includes(required)) throw new ScanFailure('missing_build_input');

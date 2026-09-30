@@ -1,6 +1,4 @@
 pub mod manager;
-pub mod package;
-pub mod portable;
 pub mod software;
 pub mod store;
 pub mod transport;

@@ -25,9 +25,6 @@ pub fn private_file(_: &Path) -> Result<(), AppError> {
 pub fn service_directory() -> Result<PathBuf, AppError> {
     Err(unsupported())
 }
-pub fn coordination_directory() -> Result<PathBuf, AppError> {
-    Err(unsupported())
-}
 pub fn secure_service_directory(_: &Path) -> Result<(), AppError> {
     Err(unsupported())
 }

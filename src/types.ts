@@ -51,16 +51,8 @@ export interface VersionInfo {
 }
 
 export type UpdateChannel = 'stable' | 'test';
-export interface UpdateProgress {
-  phase: 'idle' | 'downloading' | 'preparing' | 'restarting' | 'failed';
-  version: string | null;
-  downloaded: number;
-  total: number;
-  error: string | null;
-}
 export interface SoftwareUpdateStatus {
   channel: UpdateChannel;
-  install_kind: 'installer' | 'portable';
   current_version: string;
   checking: boolean;
   last_checked: string | null;
@@ -69,9 +61,7 @@ export interface SoftwareUpdateStatus {
     version: string;
     notes: string;
     published_at: string;
-    size: number;
-    core_version: string;
-    requires_manual_upgrade: boolean;
+    release_url: string;
   } | null;
   cached: boolean;
 }
@@ -115,7 +105,6 @@ export function coreIsActive(status: ConnectionStatus | null): boolean {
 
 export interface RelaService {
   mode: 'desktop' | 'preview';
-  completeStartup(): Promise<string | null>;
   getStatus(): Promise<ConnectionStatus>;
   connect(): Promise<ConnectionStatus>;
   disconnect(): Promise<ConnectionStatus>;
@@ -135,8 +124,7 @@ export interface RelaService {
   getSoftwareUpdate(): Promise<SoftwareUpdateStatus>;
   checkSoftwareUpdate(): Promise<SoftwareUpdateStatus>;
   setUpdateChannel(channel: UpdateChannel): Promise<SoftwareUpdateStatus>;
-  getUpdateProgress(): Promise<UpdateProgress>;
-  installSoftwareUpdate(version: string): Promise<void>;
+  openSoftwareRelease(version: string): Promise<void>;
 }
 
 export function errorMessage(error: unknown): string {

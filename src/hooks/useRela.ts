@@ -5,10 +5,12 @@ import type {
   LabResource,
   RelaService,
   ResourceSyncStatus,
+  SoftwareUpdateStatus,
 } from '../types';
 import { coreIsActive, errorMessage } from '../types';
 
 export function useRela(service: RelaService) {
+  const [software, setSoftware] = useState<SoftwareUpdateStatus | null>(null);
   const [status, setStatus] = useState<ConnectionStatus | null>(null);
   const [resources, setResources] = useState<LabResource[]>([]);
   const [sync, setSync] = useState<ResourceSyncStatus | null>(null);
@@ -24,12 +26,17 @@ export function useRela(service: RelaService) {
     refreshing.current += 1;
     const request = ++generation.current;
     try {
-      const [nextStatus, nextResources, nextSync] = await Promise.allSettled([
-        service.getStatus(),
-        service.getResources(),
-        service.getResourceSync(),
-      ]);
+      const [nextStatus, nextResources, nextSync, nextSoftware] =
+        await Promise.allSettled([
+          service.getStatus(),
+          service.getResources(),
+          service.getResourceSync(),
+          service.getSoftwareUpdate(),
+        ]);
       if (request !== generation.current) return;
+      setSoftware(
+        nextSoftware.status === 'fulfilled' ? nextSoftware.value : null,
+      );
       if (nextStatus.status === 'fulfilled') {
         const resourceValues =
           nextResources.status === 'fulfilled' ? nextResources.value : [];
@@ -92,6 +99,9 @@ export function useRela(service: RelaService) {
   };
 
   return {
+    software,
+    openSoftwareRelease: (version: string) =>
+      perform('release', () => service.openSoftwareRelease(version)),
     status,
     resources,
     sync,

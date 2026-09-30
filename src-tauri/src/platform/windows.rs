@@ -39,13 +39,12 @@ use windows_sys::Win32::{
     },
     System::{
         Services::*,
-        Threading::{GetExitCodeProcess, GetProcessId, WaitForSingleObject},
+        Threading::{GetExitCodeProcess, WaitForSingleObject},
     },
     UI::{
         Shell::{
-            FOLDERID_LocalAppData, FOLDERID_ProgramData, IsUserAnAdmin, SHGetKnownFolderPath,
-            ShellExecuteExW, SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS,
-            SHELLEXECUTEINFOW,
+            FOLDERID_ProgramData, IsUserAnAdmin, SHGetKnownFolderPath, ShellExecuteExW,
+            SEE_MASK_FLAG_NO_UI, SEE_MASK_NOASYNC, SEE_MASK_NOCLOSEPROCESS, SHELLEXECUTEINFOW,
         },
         WindowsAndMessaging::SW_HIDE,
     },
@@ -53,18 +52,6 @@ use windows_sys::Win32::{
 
 fn wide(value: impl AsRef<OsStr>) -> Vec<u16> {
     value.as_ref().encode_wide().chain(Some(0)).collect()
-}
-
-pub fn show_update_error(message: &str) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-    unsafe {
-        MessageBoxW(
-            null_mut(),
-            wide(message).as_ptr(),
-            wide("Rela 更新恢复").as_ptr(),
-            MB_OK | MB_ICONERROR,
-        );
-    }
 }
 
 struct ServiceHandle(SC_HANDLE);
@@ -152,36 +139,6 @@ pub fn replace_file(from: &Path, to: &Path) -> Result<(), AppError> {
     }
 }
 
-/// Same-volume durable move without replacing an existing destination.
-pub fn move_file_new(from: &Path, to: &Path) -> Result<(), AppError> {
-    if unsafe {
-        MoveFileExW(
-            wide(from).as_ptr(),
-            wide(to).as_ptr(),
-            MOVEFILE_WRITE_THROUGH,
-        )
-    } == 0
-    {
-        return Err(storage_error());
-    }
-    Ok(())
-}
-
-/// Create a new current-user recovery directory with its ACL already applied.
-/// Existing directories are never adopted or have their permissions rewritten.
-pub fn create_private_directory(path: &Path) -> Result<(), AppError> {
-    let desc = descriptor("D:P(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;FA;;;OW)")?;
-    let attributes = SECURITY_ATTRIBUTES {
-        nLength: size_of::<SECURITY_ATTRIBUTES>() as u32,
-        lpSecurityDescriptor: desc.0,
-        bInheritHandle: 0,
-    };
-    if unsafe { CreateDirectoryW(wide(path).as_ptr(), &attributes) } == 0 {
-        return Err(storage_error());
-    }
-    Ok(())
-}
-
 fn descriptor(sddl: &str) -> Result<LocalAllocation, AppError> {
     let mut raw = null_mut();
     if unsafe {
@@ -216,10 +173,6 @@ pub fn private_file(path: &Path) -> Result<(), AppError> {
 
 pub fn service_directory() -> Result<PathBuf, AppError> {
     known_directory(&FOLDERID_ProgramData)
-}
-
-pub fn coordination_directory() -> Result<PathBuf, AppError> {
-    Ok(known_directory(&FOLDERID_LocalAppData)?.join("coordination"))
 }
 
 fn known_directory(id: &windows_sys::core::GUID) -> Result<PathBuf, AppError> {
@@ -667,10 +620,6 @@ pub fn elevate_helper(request: &Path) -> Result<bool, AppError> {
             "core_version_unknown",
             "现有引擎版本无法验证，请使用较新的 Rela 或联系管理员恢复。",
         )),
-        9 => Err(AppError::new(
-            "core_application_update_pending",
-            "软件更新尚未完成，请使用发起更新的 Rela 副本完成恢复。",
-        )),
         _ => Err(AppError::new(
             "service_action_failed",
             "网络引擎服务操作失败，请检查系统权限并重试。",
@@ -680,12 +629,6 @@ pub fn elevate_helper(request: &Path) -> Result<bool, AppError> {
 
 pub struct ElevatedProcess(OwnedHandle);
 impl ElevatedProcess {
-    pub fn id(&self) -> u32 {
-        unsafe { GetProcessId(self.0.as_raw_handle()) }
-    }
-    pub fn has_exited(&self) -> bool {
-        unsafe { WaitForSingleObject(self.0.as_raw_handle(), 0) == WAIT_OBJECT_0 }
-    }
     pub fn wait(&self, timeout: std::time::Duration) -> Result<(), AppError> {
         if unsafe {
             WaitForSingleObject(
@@ -702,30 +645,6 @@ impl ElevatedProcess {
             ))
         }
     }
-}
-
-/// Only the fixed, authenticated Core-update protocol is available in this entry.
-pub fn launch_core_update_helper(
-    executable: &Path,
-    request: &Path,
-) -> Result<ElevatedProcess, AppError> {
-    launch_elevated(executable, "--rela-core-update", request)
-}
-
-pub fn launch_installed_recovery_helper(
-    executable: &Path,
-    request: &Path,
-) -> Result<ElevatedProcess, AppError> {
-    launch_elevated(executable, "--rela-installed-recover", request).map_err(|failure| {
-        if failure.code == "permission_cancelled" {
-            AppError::new(
-                "permission_cancelled",
-                "已取消更新恢复授权，恢复状态和备份已保留。",
-            )
-        } else {
-            failure
-        }
-    })
 }
 
 fn launch_elevated(

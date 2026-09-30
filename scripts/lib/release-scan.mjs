@@ -6,7 +6,7 @@ import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
   commonFiles,
-  updateFiles,
+  portableFiles,
   nsisPlugins,
   engineNames,
 } from './release-layout.mjs';
@@ -345,18 +345,14 @@ function layout(entries, kind, version, profile) {
     !['debug', 'release'].includes(profile)
   )
     fail('invalid_scan_configuration');
-  const stem = `Rela_${version}_x64-${kind === 'update' ? 'update' : 'portable'}${kind === 'portable' && profile === 'debug' ? '-debug' : ''}`;
+  const stem = `Rela_${version}_x64-portable${profile === 'debug' ? '-debug' : ''}`;
   const expected =
     kind === 'installer'
       ? [
           ...commonFiles.map((f) => (f === 'Rela.exe' ? 'rela.exe' : f)),
           ...nsisPlugins.map((f) => `$PLUGINSDIR/${f}`),
         ]
-      : [
-          ...updateFiles,
-          'checksums.json',
-          ...(kind === 'portable' ? ['portable.txt'] : []),
-        ].map((f) => `${stem}/${f}`);
+      : [...portableFiles, 'checksums.json'].map((f) => `${stem}/${f}`);
   const allowed = new Set(expected),
     names = new Set(entries.filter((e) => !e.directory).map((e) => e.name));
   for (const entry of entries) {
@@ -388,30 +384,12 @@ function inspectMetadata(members, kind, stem, version, profile, pin) {
   for (const name of engineNames)
     if (at(`easytier/${name}`).sha256 !== pin.files[name])
       fail('engine_hash_mismatch');
-  if (kind === 'installer') {
-    if (at('rela.exe').sha256 !== at('$PLUGINSDIR/RelaUpdate.exe').sha256)
-      fail('installer_hook_mismatch');
-    return;
-  }
+  if (kind === 'installer') return;
   const index = json('checksums.json');
-  const fields =
-    kind === 'update'
-      ? [
-          'schema_version',
-          'version',
-          'target',
-          'profile',
-          'core_version',
-          'engine_revision',
-          'files',
-        ]
-      : ['version', 'profile', 'files'];
+  const fields = ['version', 'profile', 'files'];
   if (!isDeepStrictEqual(Object.keys(index).sort(), fields.sort()))
     fail('checksum_index_mismatch');
-  const expected = [
-    ...updateFiles,
-    ...(kind === 'portable' ? ['portable.txt'] : []),
-  ].sort();
+  const expected = [...portableFiles].sort();
   if (
     index.version !== version ||
     index.profile !== profile ||
@@ -419,14 +397,6 @@ function inspectMetadata(members, kind, stem, version, profile, pin) {
       JSON.stringify(expected)
   )
     fail('checksum_index_mismatch');
-  if (
-    kind === 'update' &&
-    (index.schema_version !== 1 ||
-      index.target !== 'windows-x86_64' ||
-      index.core_version !== pin.version ||
-      index.engine_revision !== pin.engine_revision)
-  )
-    fail('update_index_mismatch');
   for (const name of expected)
     if (at(name).sha256 !== index.files[name]) fail('checksum_mismatch');
 }
@@ -450,7 +420,7 @@ export async function scanArtifact({
       'raw_bytes',
       'utf8_utf16_rules',
       'configured_needles',
-      ...(['installer', 'portable', 'update'].includes(kind)
+      ...(['installer', 'portable'].includes(kind)
         ? [
             'decompressed_payload',
             'fixed_file_inventory',
@@ -464,16 +434,7 @@ export async function scanArtifact({
     findings: [],
   };
   try {
-    if (
-      ![
-        'installer',
-        'portable',
-        'update',
-        'binary',
-        'log',
-        'frontend',
-      ].includes(kind)
-    )
+    if (!['installer', 'portable', 'binary', 'log', 'frontend'].includes(kind))
       fail('invalid_scan_kind');
     await plain(artifact, kind === 'frontend');
     if (kind === 'frontend') {

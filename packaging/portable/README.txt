@@ -21,6 +21,11 @@ portable.txt 是便携模式标识，请保留在 Rela.exe 同目录。
 安装版和 Portable 版共用这一服务，请勿同时使用多个副本控制连接。
 只读目录、FAT/exFAT 移动盘无法保证权限保护，请使用本地 NTFS 文件夹。
 
+手动更新
+发现新版本时，点击应用中的“前往 GitHub 下载”，获取完整绿色版 ZIP。
+从托盘退出 Rela，备份 data 文件夹后替换完整程序文件，保留原 data 和 portable.txt。
+继续使用同一 Windows 用户以读取加密凭据。更新后连接/重连时部署随包网络引擎。
+
 移除
 1. 先退出所有 Rela 界面。
 2. 右键 Remove-Network-Service.cmd，选择“以管理员身份运行”。

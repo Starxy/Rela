@@ -29,22 +29,16 @@ tokio = { version = "1", features = ["sync", "time", "net", "rt", "io-util"] }
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "stream"] }
 fs2 = "0.4"
 semver = { version = "1", features = ["serde"] }
-minisign-verify = "0.3"
 getrandom = "0.2"
-zip = { version = "8.6", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [dev-dependencies]
-tauri = { version = "~2.11.6", features = ["test"] }
 ed25519-dalek = "2"
-minisign = "0.10"
 
 [target.'cfg(windows)'.dependencies]
-tauri-plugin-updater = { version = "=2.12.0", default-features = false, features = ["rustls-tls"] }
-updater-http = { package = "reqwest", version = "0.13", default-features = false }
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation", "Win32_Security", "Win32_Security_Authorization",
   "Win32_Security_Cryptography", "Win32_System_Memory", "Win32_System_Threading",
-  "Win32_System_Services", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Diagnostics_ToolHelp", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_Shell_Common",
+  "Win32_System_Services", "Win32_System_SystemInformation", "Win32_System_SystemServices", "Win32_System_Com", "Win32_System_Registry", "Win32_UI_Shell", "Win32_UI_Shell_Common",
   "Win32_UI_WindowsAndMessaging", "Win32_Storage_FileSystem", "Win32_NetworkManagement_IpHelper",
   "Win32_NetworkManagement_Ndis", "Win32_Networking_WinSock"
 ] }

@@ -19,11 +19,10 @@ try {
   );
   const target = path.resolve(root, process.env.CARGO_TARGET_DIR || 'target');
   const bundle = path.join(target, profile, 'bundle');
-  const expectedBinary = path.join(bundle, 'payload/Rela.exe');
+  const expectedBinary = path.join(target, profile, 'rela.exe');
   const sources = [
     ['installer', `nsis/Rela_${version}_x64-setup.exe`],
     ['portable', `portable/Rela_${version}_x64-portable${suffix}.zip`],
-    ['update', `portable/Rela_${version}_x64-update${suffix}.zip`],
   ];
   const reports = [];
   for (const [kind, relative] of sources) {
@@ -33,7 +32,7 @@ try {
       version,
       profile,
       pin,
-      expectedBinary,
+      expectedBinary: kind === 'portable' ? expectedBinary : undefined,
     });
     reports.push(report);
     console.log(`${kind}: ${report.passed ? 'PASS' : 'FAIL'}`);
@@ -42,28 +41,32 @@ try {
     const prefix =
       report.kind === 'installer'
         ? ''
-        : `Rela_${version}_x64-${report.kind}${report.kind === 'portable' ? suffix : ''}/`;
+        : `Rela_${version}_x64-portable${suffix}/`;
     return report.artifacts.find(
       (item) => item.member.toLowerCase() === (prefix + name).toLowerCase(),
     );
   };
-  // NSIS PRE verifies the helper against the ZIP, and POST checks every common
-  // file. Comparing only Rela.exe would miss a stale license or cleanup script.
-  const commonFilesEqual = commonFiles.every((name) => {
-    const expected = member(reports[0], name)?.sha256;
-    return (
-      !!expected &&
-      reports.every((report) => member(report, name)?.sha256 === expected)
-    );
-  });
-  const passed = commonFilesEqual && reports.every((report) => report.passed);
+  // Tauri stamps a different bundle marker into the NSIS executable.
+  // Shared resources must match; each application binary is scanned separately.
+  const sharedResourcesEqual = commonFiles
+    .filter((name) => name !== 'Rela.exe')
+    .every((name) => {
+      const expected = member(reports[0], name)?.sha256;
+      return (
+        !!expected &&
+        reports.every((report) => member(report, name)?.sha256 === expected)
+      );
+    });
+  const passed =
+    sharedResourcesEqual && reports.every((report) => report.passed);
   const result = {
     schema_version: 1,
     version,
     profile,
     passed,
-    common_files_equal: commonFilesEqual,
-    application_sha256: member(reports[0], 'Rela.exe')?.sha256 ?? null,
+    shared_resources_equal: sharedResourcesEqual,
+    installer_application_sha256:
+      member(reports[0], 'Rela.exe')?.sha256 ?? null,
     reports,
   };
   await writeFile(
@@ -71,10 +74,12 @@ try {
     JSON.stringify(result, null, 2) + '\n',
   );
   console.log(
-    `安装包与 ZIP 共用文件一致：${commonFilesEqual}。报告已保存至 bundle/validation.json。`,
+    `安装包与 ZIP 共享资源一致：${sharedResourcesEqual}。报告已保存至 bundle/validation.json。`,
   );
   if (!passed) process.exitCode = 1;
 } catch {
-  console.error('包检查未完成；请先生成安装包和两种 ZIP，并确认 7-Zip 可用。');
+  console.error(
+    '包检查未完成；请先生成安装包和绿色版 ZIP，并确认 7-Zip 可用。',
+  );
   process.exitCode = 1;
 }

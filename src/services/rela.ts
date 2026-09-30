@@ -1,11 +1,8 @@
 import { invoke, isTauri } from '@tauri-apps/api/core';
 import type { RelaService } from '../types';
 
-let startup: Promise<string | null> | undefined;
-
 export const desktopService: RelaService = {
   mode: 'desktop',
-  completeStartup: () => (startup ??= invoke('complete_update_startup')),
   getStatus: () => invoke('get_status'),
   connect: () => invoke('connect'),
   disconnect: () => invoke('disconnect'),
@@ -25,9 +22,8 @@ export const desktopService: RelaService = {
   getSoftwareUpdate: () => invoke('get_software_update'),
   checkSoftwareUpdate: () => invoke('check_software_update'),
   setUpdateChannel: (channel) => invoke('set_update_channel', { channel }),
-  getUpdateProgress: () => invoke('get_update_progress'),
-  installSoftwareUpdate: (version) =>
-    invoke('install_software_update', { version }),
+  openSoftwareRelease: (version) =>
+    invoke('open_software_release', { version }),
 };
 
 export async function createService(): Promise<RelaService> {

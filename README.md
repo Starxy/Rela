@@ -7,7 +7,7 @@
 - 启动时匿名获取并验签公开 GitHub 资源清单，默认网络为 `lab201`、节点为 `tcp://47.93.55.228:12010`。无缓存时等待获取，不内置实验室线路兜底。
 - 本地覆盖网络名或节点后暂停清单自动获取，重启后保留；手动“更新线上配置”成功后覆盖线上字段并恢复自动刷新。私有模式、禁用 P2P 和网关仍由本机管理。
 - 从有效缓存显示 SSH、Web、NAS 资源；连接后进行 TCP 探测，未连接时显示“未检测”。首份 Spark 仅为占位。
-- 独立检查软件稳定/测试渠道，验证签名、架构和版本，保留可信缓存；软件下载安装及恢复流程仍在开发。
+- 独立检查软件稳定/测试渠道，验证清单签名、架构和版本，保留可信缓存；发现新版后提醒手动更新，点击打开对应 GitHub Release 页面。
 - 设置界面可修改网络名称、credential 凭据、连接节点和两个开关，支持更换/清除凭据、恢复默认和保存后重连。
 - 使用专用 `RelaEasyTier` 服务连接、断开和重连。GUI 保持普通权限，服务变更由同一程序的一次性提权入口执行。目前每次连接控制都需要 UAC 授权。
 - 通过官方 CLI 查询本机 RPC，并核对虚拟网卡地址。只有 Core、节点连接和 TUN 都就绪才显示已连接。
@@ -16,7 +16,7 @@
 - 最小化或关闭窗口时隐藏到系统托盘；点击托盘图标恢复，右键菜单可打开或退出 Rela。
 - 提供安装版和 Portable ZIP 免安装版；便携版设置与界面缓存保存在解压目录。
 
-本项目仅开发客户端，使用现有 EasyTier 网络。自动升级仍在开发；开机启动和自动连接不在本期交付范围。浏览器预览使用演示数据，不代表真实网络验证通过。
+本项目仅开发客户端，使用现有 EasyTier 网络。软件本体采用手动更新；开机启动和自动连接不在本期交付范围。浏览器预览使用演示数据，不代表真实网络验证通过。
 
 ## 分发与配置
 
@@ -47,17 +47,13 @@ npm run desktop:dev
 
 开发者可使用 `cargo build --example credential-tool`，再执行 `target/debug/examples/credential-tool.exe import config/credential.local.dat <用户配置目录>/network.dat` 导入此前保存的 DPAPI 记录。该记录包含 network_name、peers、credential_secret，只能由原 Windows 用户解密；此工具不参与发布包，也不在构建时自动执行。
 
-### 安装版与签名
+### 安装版
 
 ```powershell
-npm run tauri -- build --no-bundle
-# RELA_PACKAGE_KEY_FILE 指向仓库外、当前用户 DPAPI 加密的包私钥文件
-cargo run -p rela --example package-tool -- bundle "$env:RELA_PACKAGE_KEY_FILE"
+npm run desktop:build
 ```
 
-本地打包器只在固定 Tauri 打包子进程中设置签名密钥环境变量，不写明文密钥或回显打包子进程输出。已配置受保护 Tauri 签名环境的发布端也可直接运行 `npm run desktop:build`。只检查开发构建时使用 `--no-bundle`，无需私钥。
-
-输出位于 `target/release/bundle/nsis/`，包含安装包、Tauri 签名及独立复验元数据。构建/签名通过仍不代表已经完成干净系统上的安装、升级、卸载和真实 VPN 验收。T45 已记录 `Packet.dll` 的内部授权；公开发布包的实际分发范围仍需与授权一致，见 [第三方说明](THIRD-PARTY-NOTICES.md)。
+输出位于 `target/release/bundle/nsis/`。构建不需要自动更新包私钥。安装和卸载仍须在独立 Windows 测试机验收；第三方运行库的实际分发范围须与授权一致，见 [第三方说明](THIRD-PARTY-NOTICES.md)。
 
 ### Portable 免安装版
 
@@ -73,7 +69,7 @@ Portable 省去界面安装步骤，首次连接仍需 UAC 授权并创建 `Rela
 
 仅重新打包已编译程序可运行 `npm run package:portable`；`-- --debug` 用于 CI 的 debug 包。发行前应使用完整 `desktop:portable` 构建，保证程序、前端和引擎资产一致。打包使用全新临时目录和固定文件清单，不包含用户 `data` 或构建配置源文件。
 
-安装版使用更新 ZIP 校验安装器助手和安装后的文件，因此两种包的共用文件必须完全一致。Portable 打包会生成与 Tauri NSIS 相同标记的程序副本，保留原始编译文件；两种包都生成后运行 `npm run check:packages`（调试包加 `-- --debug`）。该检查已加入 Windows CI。构建与验收边界见[产物验证说明](docs/release-validation.md)。
+两种包都生成后运行 `npm run check:packages`（调试包加 `-- --debug`），检查文件清单、引擎摘要、敏感内容及共享资源一致性。绿色版直接使用编译得到的程序；Tauri 为安装版写入不同的包类型标记，两份主程序不要求字节相同。详见[产物验证说明](docs/release-validation.md)。
 
 ### 检查
 
@@ -119,7 +115,6 @@ src-tauri/src/platform/   Windows 权限、DPAPI、SCM、网卡和 ICMP
 src-tauri/src/distribution/  签名获取、配置事务、资源探测、软件版本检查
 src-tauri/src/network_config.rs  配置校验、旧存储迁移和 Core TOML
 src-tauri/installer/      安装器占用检查和共享服务保留钩子
-src-tauri/src/updates/    软件更新协调、文件恢复、官方安装器适配
 crates/rela-protocol/     共享业务模型
 crates/rela-manifests/    严格清单格式、签名与版本校验
 docs/                    产品设计、架构、接口、验收清单
@@ -127,8 +122,15 @@ docs/                    产品设计、架构、接口、验收清单
 
 详见 [架构](docs/architecture.md)、[接口](docs/protocol.md)、[Windows 验收清单](docs/windows-validation.md)。
 
-Core 版本与恢复：设置中区分随附、已部署和正在运行的引擎。服务切换已接入完整文件事务和降级保护，旧密码配置不会自动恢复连接；当前通过文件故障注入及隔离 RPC 测试，真实 Windows 服务/UAC 验收仍待独立机器。设计和恢复边界见 [Core 更新设计](docs/core-update-design.md)。
+Core 版本与恢复：设置中区分随附、已部署和正在运行的引擎。服务切换已接入完整文件事务和降级保护，旧密码配置不会自动恢复连接；当前通过文件故障注入及隔离 RPC 测试，真实 Windows 服务/UAC 验收仍待独立机器。设计和恢复边界见 [引擎部署说明](docs/engine-deployment.md)。
 
-绿色版和安装版软件更新均已接入确认、下载进度、签名校验、退出交接与启动恢复。安装版通过独立助手运行官方 updater，并协调安装器、用户配置和共享网络服务；两个连续签名版本的实机验收仍待完成，当前包不能视为已验证的自动升级交付。恢复规则与保留的诊断目录见 [本体更新设计](docs/update-recovery-design.md)。
+### 手动更新软件
 
-安装器与卸载器检查当前目录是否可替换，并拒绝越过未完成的安装版更新事务，不强制关闭其他 Rela 副本。原用户配置先备份，新版就绪并完成提交后才显示窗口；中断后按持久化记录恢复。安装版首次使用自动更新能力仍需手动安装含新钩子的版本。普通卸载保留各副本共用的网络服务与 ProgramData 配置；需要彻底清理时，先保留安装目录中的 Remove-Network-Service.cmd / .ps1，以管理员身份运行并输入 REMOVE 确认，这会影响本机所有 Rela 副本。升级流程不调用服务删除。
+启动后在后台检查所选渠道的新版本；首页和设置页显示提示。点击“前往 GitHub 下载”打开 `https://github.com/Starxy/Rela/releases/tag/v<版本>`，由用户下载：
+
+- 安装版：从托盘退出 Rela，再运行新版安装包。
+- 绿色版：从托盘退出 Rela，备份 `data` 后用新版完整包替换程序文件，保留原 `data` 与 `portable.txt`；继续使用同一 Windows 用户以读取 DPAPI 凭据。
+
+客户端只获取版本清单，不下载或安装软件包，不提供软件本体的自动回滚。资源和网络配置仍按原规则自动或手动刷新。网络引擎随软件包分发，在用户连接/重连时部署。
+
+安装器检查目标程序是否可替换，要求先退出该目录中的 Rela，不强制关闭其他副本。普通卸载保留共享网络服务和 ProgramData 配置；彻底清理时，以管理员身份运行包内 `Remove-Network-Service.cmd` 并输入 `REMOVE`，这会影响本机所有 Rela 副本。

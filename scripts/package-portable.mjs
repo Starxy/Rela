@@ -13,7 +13,6 @@ import {
 } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { nsisPayload } from './lib/bundle-payload.mjs';
 import {
   assertResourceMap,
   engineNames,
@@ -91,15 +90,10 @@ try {
   );
   const required = engineNames;
   await mkdir(path.join(directory, 'easytier'), { recursive: true });
-  const payload = nsisPayload(
-    await readFile(path.join(target, profile, 'rela.exe')),
+  await copyFile(
+    path.join(target, profile, 'rela.exe'),
+    path.join(directory, 'Rela.exe'),
   );
-  // Keep the Cargo output untouched, just as Tauri restores it after bundling.
-  // This canonical copy is also the exact-byte reference for all package scans.
-  const payloadDirectory = path.join(target, profile, 'bundle/payload');
-  await mkdir(payloadDirectory, { recursive: true });
-  await writeFile(path.join(payloadDirectory, 'Rela.exe'), payload);
-  await writeFile(path.join(directory, 'Rela.exe'), payload);
   for (const file of required) {
     if ((await digest(path.join(engine, file))) !== manifest.files[file]) {
       throw new Error(`引擎校验失败：${file}。请先运行 npm run prepare:core。`);
@@ -153,42 +147,6 @@ try {
   await writeFile(`${archive}.sha256`, `${zipHash}  ${name}.zip\n`);
   console.log(`Portable ZIP: ${archive}`);
   console.log(`SHA-256: ${zipHash}`);
-  // Updating preserves the destination's marker and data. Keep them out of this ZIP.
-  const updateName = `Rela_${config.version}_x64-update`;
-  const updateDirectory = path.join(staging, updateName);
-  if (
-    path.dirname(directory) !== staging ||
-    path.dirname(updateDirectory) !== staging
-  ) {
-    throw new Error('更新包暂存路径无效。');
-  }
-  await rm(path.join(directory, 'portable.txt'));
-  delete files['portable.txt'];
-  await writeFile(
-    path.join(directory, 'checksums.json'),
-    JSON.stringify(
-      {
-        schema_version: 1,
-        version: config.version,
-        target: 'windows-x86_64',
-        profile,
-        core_version: manifest.version,
-        engine_revision: manifest.engine_revision,
-        files,
-      },
-      null,
-      2,
-    ) + '\n',
-  );
-  await rename(directory, updateDirectory);
-  const updateFile = `${updateName}${debug ? '-debug' : ''}.zip`;
-  const updateTemp = path.join(staging, updateFile);
-  createZip(updateDirectory, updateTemp);
-  const updateHash = await digest(updateTemp);
-  const updateArchive = path.join(output, updateFile);
-  await rename(updateTemp, updateArchive);
-  await writeFile(`${updateArchive}.sha256`, `${updateHash}  ${updateFile}\n`);
-  console.log(`Portable update ZIP: ${updateArchive}`);
 } finally {
   const relative = path.relative(output, staging);
   if (relative.startsWith('.pack-') && !relative.includes(path.sep)) {

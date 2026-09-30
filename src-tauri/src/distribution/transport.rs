@@ -21,10 +21,6 @@ impl Fetcher {
         Self::build(false)
     }
 
-    pub fn for_packages() -> Result<Self, AppError> {
-        Self::with_timeout(false, Duration::from_secs(600))
-    }
-
     fn build(allow_loopback: bool) -> Result<Self, AppError> {
         Self::with_timeout(allow_loopback, Duration::from_secs(20))
     }
@@ -166,15 +162,7 @@ pub(super) fn allowed_url(url: &Url, allow_loopback: bool) -> bool {
     }
     url.scheme() == "https"
         && url.port().is_none()
-        && matches!(
-            url.host_str(),
-            Some(
-                "raw.githubusercontent.com"
-                    | "github.com"
-                    | "release-assets.githubusercontent.com"
-                    | "objects.githubusercontent.com"
-            )
-        )
+        && matches!(url.host_str(), Some("raw.githubusercontent.com"))
 }
 fn fetch_error(message: &str) -> AppError {
     AppError::new("download_failed", message)
@@ -240,7 +228,7 @@ mod tests {
     }
 
     #[test]
-    fn release_transport_disallows_cleartext_and_foreign_hosts() {
+    fn manifest_transport_disallows_cleartext_and_foreign_hosts() {
         for url in [
             "http://github.com/Starxy/Rela",
             "https://github.com.evil.test/a",

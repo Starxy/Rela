@@ -1,6 +1,6 @@
-# 签名清单与固定入口 v1
+# 签名清单与固定入口
 
-本约定落实 T03–T09 的格式部分。客户端业务接口版本、软件版本、资源修订号和清单格式版本分别管理。
+资源清单为 v1，软件版本清单为 v2，签名封装仍为 rela.signed.v1。客户端业务接口版本、软件版本、资源修订号和清单格式版本分别管理。
 
 ## 入口
 
@@ -27,7 +27,7 @@
 
 客户端只信任 `config/distribution.json` 中嵌入的公钥，按 key_id 和 purpose 精确匹配。测试 fixture 的密钥只用于测试，不能加入生产信任配置。生产私钥存于受保护发布环境，本机样本签名工具以当前用户 DPAPI 保存私钥；正式启用前还需离线备份和发布端配置。
 
-轮换时先发布同时信任旧、新公钥的客户端，再用新密钥签名；旧客户端需先升级。等迁移完成后，在后续客户端中移除旧公钥。远程清单不能自行为客户端新增信任根。资源/软件清单密钥分别生成；Tauri 软件包签名另用官方 updater 密钥，算法格式按 [Tauri 官方文档](https://v2.tauri.app/plugin/updater/) 配置。
+轮换时先发布同时信任旧、新公钥的客户端，再用新密钥签名；旧客户端需先手动升级。迁移完成后再移除旧公钥。远程清单不能自行新增信任根，资源和软件清单使用独立用途密钥。
 
 ## 资源 payload
 
@@ -49,26 +49,32 @@
 
 已验证资源 payload 的 SHA-256 与修订号一起缓存。低于缓存版本拒绝；相同版本只接受相同原始内容。回退内容必须使用更高修订号重新签名发布。更换 JSON 排版也需要新修订号。
 
-## 软件 payload
+## 软件 payload v2
 
-严格字段：`schema_version: 1`、递增整数 `revision`、SemVer `version`、`channel`（stable/test）、`target: windows-x86_64`、`notes`、`published_at`、`core_version`、`minimum_app_version`、`installer`、`portable`。
+仅允许以下字段：
 
-`installer` 和 `portable` 都包含 `url`、`size`（1 字节至 2 GiB）、小写十六进制 `sha256`、Tauri/minisign `signature`。地址必须固定到 `https://github.com/Starxy/Rela/releases/download/v<version>/<文件名>`，安装包为 exe，绿色包为 zip，不接受 latest、其他仓库、跳转参数或可变路径。
+```json
+{
+  "schema_version": 2,
+  "revision": 1,
+  "version": "0.2.0",
+  "channel": "stable",
+  "target": "windows-x86_64",
+  "notes": "版本说明",
+  "published_at": "2026-09-30T00:00:00Z"
+}
+```
 
-稳定渠道拒绝预发布版本；测试渠道独立入口。只向更高 SemVer 更新，不自动降级；低于 minimum_app_version 提示先手动升级。revision 与软件版本独立，用于拒绝过时的软件元数据。资源修订号不影响软件版本比较。
+以上仅为格式示例，不代表该软件版本已发布。稳定渠道拒绝预发布版本，测试渠道独立入口；只提示高于当前版本的 SemVer，拒绝 build metadata。revision 为递增整数，与资源修订及软件版本独立。同一 revision 的原始内容不可改变；修改说明需提高 revision。
 
-Cargo 工作区、package.json、package-lock.json、tauri.conf.json 和 Release tag 的版本必须一致，发布前由 `scripts/check-versions.mjs` 检查。Core 保持固定版本，随对应软件版本发布，不跟随 latest。
+客户端通过固定仓库与版本生成 `https://github.com/Starxy/Rela/releases/tag/v<version>`。清单不接受自定义跳转地址、安装包信息或最低自动升级版本。打开页面前重新核对已验签缓存与用户看到的版本，用户自行下载、安装或替换。
 
-## 软件包下载与绿色更新包
+两个软件入口尚未发布正式软件清单，应按 v2 格式发布。旧 v1 软件清单不再支持；资源 v1 和签名封装保持兼容。先确保对应 Release 与安装包、绿色版 ZIP 可匿名获取，再发布所选渠道的签名清单。
 
-下载器按签名软件清单给定的大小写入临时文件，限定 HTTPS 主机、跳转与超时；只接受完整 200 响应，拒绝部分响应、过量数据和中断。落盘后逐块核对 SHA-256 和独立的 Tauri/minisign 包签名。验证后的 Windows 文件句柄保持禁止写入/删除；重新打开必须重新校验。失败或正常释放时清除本次临时文件，不修改原程序。
+Cargo 工作区、package.json、package-lock.json、tauri.conf.json 和 Release tag 的版本须一致，由 `scripts/check-versions.mjs` 检查。Core 保持固定版本并随对应软件包发布。
 
-`package:portable` 同时生成首次手动安装 ZIP 和 `Rela_<version>_x64-update.zip`。更新 ZIP 的单一根目录为 `Rela_<version>_x64-update/`，包含 15 个固定程序/许可文件及 `checksums.json`；不含 `portable.txt`、`data`、凭据或本地配置。手动安装 ZIP 仍保留标记文件。Debug 包带 `-debug` 文件名和 `profile: debug`，运行时拒绝作为正式更新使用。
+## 发布产物
 
-更新包 `checksums.json` 使用 schema_version=1、version、target=windows-x86_64、profile=release、core_version、engine_revision 及逐文件 SHA-256 的 files 映射。版本与 Core 信息必须匹配软件清单，Core 自身资产清单必须与逐文件摘要一致。解压前拒绝路径越界、反斜杠/ADS/设备名、未知文件、大小写重复、链接、加密条目和超限内容；只向全新目录写入，逐文件校验并检查主程序、Core、CLI 的 PE x64 头。暂存前检查可用空间，失败只清理本次创建的暂存内容。
+只构建 NSIS 安装包和完整 Portable ZIP，后者包含 `portable.txt`、使用说明、固定引擎资产和逐文件 SHA-256 校验表。包内不含用户 data、凭据或开发者配置。打包与扫描规则见[产物验证](release-validation.md)。
 
-2026-09-29：下载、独立包签名和安全暂存模块已有 7 项测试，真实 loopback HTTP 及签名 ZIP 测试通过；已生成并检查本地 debug 更新 ZIP。已接入绿色版确认、进度、助手交接和启动恢复；独立 minisign 包签名密钥已生成并完成小型本地样本签名复验，私钥在仓库外以 DPAPI 保存。官方安装器、发布工作流和真实升级验收继续实现。此阶段不代表 T37、T42 或真实升级验收已完成。
-
-安装版适配器进一步限制安装包不超过 512 MiB，并要求包签名的 trusted comment 包含唯一、匹配清单的 `version:<SemVer>` 字段。官方 updater 的本机 JSON 从已验签软件清单即时派生，不单独发布或信任第二份远程版本元数据；详见本体更新设计。Tauri 配置已开启 createUpdaterArtifacts，公钥必须与 config/package-signing.json 一致，版本检查脚本会核对这些约束。
-
-本地 package-tool 的 `sign` 使用工作区版本，`sign-version` 允许显式指定测试版本；两者签名后都用生产校验器复验版本、摘要和签名。`bundle <仓库外 DPAPI 私钥文件>` 为已经完成的 release 构建调用固定 Tauri 打包器，密钥仅进入该子进程环境，生成 NSIS 签名后再次独立校验；它不执行安装器或发布资产。私钥备份及受保护 CI 托管仍待完成。
+客户端仅下载签名版本清单；应用内包下载、包验签、更新 ZIP、安装助手和软件恢复事务均已移除。

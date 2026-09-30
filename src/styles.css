@@ -905,22 +905,28 @@ dd {
     animation: none !important;
   }
 }
-/* Software update confirmation stays in the settings flow. */
-.update-confirmation {
-  margin-top: 12px;
-  padding: 12px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-}
-.update-actions {
+
+.update-notice {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
   gap: 8px;
-  justify-content: flex-end;
+  margin: 12px 24px 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: #edf6f1;
+  color: var(--accent);
+  font-size: 12px;
 }
-.update-progress {
-  margin-top: 12px;
-  font-size: 13px;
+.update-notice span {
+  overflow-wrap: anywhere;
 }
-.update-progress progress {
-  width: 100%;
+.update-notice .button {
+  flex-shrink: 0;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+.update-notice + .home {
+  overflow-y: auto;
 }

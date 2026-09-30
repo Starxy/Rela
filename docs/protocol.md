@@ -1,33 +1,31 @@
 # Rela 本地接口协议
 
-Tauri 业务接口版本 `8`；JSON 字段使用 `snake_case`。Rust 定义位于 `crates/rela-protocol/src/lib.rs`，前端镜像位于 `src/types.ts`。此版本独立于 EasyTier RPC 协议。
+Tauri 业务接口版本 `9`；JSON 字段使用 `snake_case`。Rust 定义位于 `crates/rela-protocol/src/lib.rs`，前端镜像位于 `src/types.ts`。此版本独立于 EasyTier RPC 协议。
 
 ## Frontend → Native
 
-| Command                   | 参数                              | 返回与行为                                                   |
-| ------------------------- | --------------------------------- | ------------------------------------------------------------ |
-| `get_status`              | 无                                | `ConnectionStatus`，读取实际服务和 RPC                       |
-| `connect`                 | 无                                | 安装或启动专用服务，返回最新状态                             |
-| `disconnect`              | 无                                | 停止专用服务，返回最新状态                                   |
-| `reconnect`               | 无                                | 使用已保存配置重新启动，返回最新状态                         |
-| `get_network_config`      | 无                                | `NetworkConfigView`，隐藏已保存密钥                          |
-| `save_network_config`     | `{ config }`                      | 校验并保存 Update，返回 View；下次连接生效                   |
-| `reset_network_config`    | 无                                | 清除凭据与本机覆盖，恢复可信缓存默认值并后台刷新             |
-| `get_resources`           | 无                                | `LabResource[]`，连接后执行有界 TCP 探测                     |
-| `open_resource`           | `{ id }`                          | 要求真实连接，按有效清单打开 SSH、Web 或 NAS 文件夹          |
-| `get_resource_sync`       | 无                                | `ResourceSyncStatus`，读取配置来源与生效状态                 |
-| `refresh_resources`       | 无                                | 手动更新线上 network/peer/resources，成功后恢复自动刷新      |
-| `get_software_update`     | 无                                | `SoftwareUpdateStatus`，独立软件检查状态与候选版本           |
-| `check_software_update`   | 无                                | 匿名获取并验签所选渠道的软件清单，不下载或安装包             |
-| `set_update_channel`      | `{ channel: "stable" 或 "test" }` | 持久化渠道并返回对应缓存状态，检查期间拒绝切换               |
-| `get_update_progress`     | 无                                | `UpdateProgress`，绿色版下载、准备、重启或失败状态           |
-| `install_software_update` | `{ version }`                     | 重新验证用户确认的版本并启动绿色版更新，成功交接后退出原 GUI |
-| `complete_update_startup` | 无                                | 前端挂载后发送候选启动确认，返回更新/回退提示或 null         |
-| `run_diagnostics`         | 无                                | `DiagnosticReport`，从实际状态构建                           |
-| `export_logs`             | 无                                | 保存诊断摘要 JSON，返回路径提示                              |
-| `get_version`             | 无                                | `VersionInfo`，含应用、随附、已部署及运行 Core 版本          |
-| `get_preferences`         | 无                                | `Preferences`，读取设备名称和偏好                            |
-| `save_preferences`        | `{ preferences }`                 | 保存设备名称；自动连接和开机启动暂不支持                     |
+| Command                 | 参数                              | 返回与行为                                                        |
+| ----------------------- | --------------------------------- | ----------------------------------------------------------------- |
+| `get_status`            | 无                                | `ConnectionStatus`，读取实际服务和 RPC                            |
+| `connect`               | 无                                | 安装或启动专用服务，返回最新状态                                  |
+| `disconnect`            | 无                                | 停止专用服务，返回最新状态                                        |
+| `reconnect`             | 无                                | 使用已保存配置重新启动，返回最新状态                              |
+| `get_network_config`    | 无                                | `NetworkConfigView`，隐藏已保存密钥                               |
+| `save_network_config`   | `{ config }`                      | 校验并保存 Update，返回 View；下次连接生效                        |
+| `reset_network_config`  | 无                                | 清除凭据与本机覆盖，恢复可信缓存默认值并后台刷新                  |
+| `get_resources`         | 无                                | `LabResource[]`，连接后执行有界 TCP 探测                          |
+| `open_resource`         | `{ id }`                          | 要求真实连接，按有效清单打开 SSH、Web 或 NAS 文件夹               |
+| `get_resource_sync`     | 无                                | `ResourceSyncStatus`，读取配置来源与生效状态                      |
+| `refresh_resources`     | 无                                | 手动更新线上 network/peer/resources，成功后恢复自动刷新           |
+| `get_software_update`   | 无                                | `SoftwareUpdateStatus`，独立软件检查状态与候选版本                |
+| `check_software_update` | 无                                | 匿名获取并验签所选渠道的软件清单，不下载或安装包                  |
+| `set_update_channel`    | `{ channel: "stable" 或 "test" }` | 持久化渠道并返回对应缓存状态，检查期间拒绝切换                    |
+| `open_software_release` | `{ version }`                     | 核对已验签的当前候选版本，在系统浏览器打开固定仓库的 Release 页面 |
+| `run_diagnostics`       | 无                                | `DiagnosticReport`，从实际状态构建                                |
+| `export_logs`           | 无                                | 保存诊断摘要 JSON，返回路径提示                                   |
+| `get_version`           | 无                                | `VersionInfo`，含应用、随附、已部署及运行 Core 版本               |
+| `get_preferences`       | 无                                | `Preferences`，读取设备名称和偏好                                 |
+| `save_preferences`      | `{ preferences }`                 | 保存设备名称；自动连接和开机启动暂不支持                          |
 
 ### 网络配置
 
@@ -50,9 +48,7 @@ Update 使用相同配置字段，但把 `has_credential` 换成可选 `credenti
 
 `ResourceSyncStatus` 包含 local_override、resource_version、applied_resource_version、pending_reconnect、configuration_ready、credential_unavailable、has_credential、refreshing、last_checked、last_error。服务实际应用后才记录 applied；幂等连接已有服务不把待应用配置标成生效。
 
-`SoftwareUpdateStatus` 包含 channel、install_kind（installer/portable）、current_version、checking、last_checked、last_error、candidate、cached。candidate 包含 version、notes、published_at、size、core_version、requires_manual_upgrade；无候选不等于检查成功，需结合 last_checked/last_error。失败保留可信缓存并标记 cached。客户端不接受前端传入包 URL 或签名，绿色版通过用户确认的 version 选择可信缓存；版本改变时拒绝旧确认。同版本的包、Core 和最低升级要求不可随清单新修订改变。安装版已具备官方 updater 的验证适配层，但安装事务和业务命令接入仍待完成。
-
-`UpdateProgress` 包含 phase（idle/downloading/preparing/restarting/failed）、version、downloaded、total、error。下载完成不代表安装完成。候选启动确认前隐藏窗口并禁止配置、清单和网络操作，确认提交后再启动后台刷新；失败退出，由助手恢复。
+`SoftwareUpdateStatus` 包含 channel、current_version、checking、last_checked、last_error、candidate、cached。candidate 包含 version、notes、published_at、release_url。只提示更高 SemVer；无候选不等于检查成功，需结合 last_checked/last_error。失败保留可信缓存并标记 cached。release_url 由 Native 使用固定仓库和已验证版本生成；打开命令只接受 version，重新验证缓存与当前候选，拒绝过时版本。软件本体由用户在浏览器下载并手动更新。
 
 完整规则见[分发与配置约定](distribution-config-decisions.md)和[签名清单格式](distribution-format.md)。
 
@@ -99,4 +95,4 @@ Core 固定为 `2.7.0-0a783c8e`。TOML 使用 Secure Mode 的 credential 私钥�
 
 服务操作串行执行。连接已运行的服务为幂等操作，不主动覆盖运行配置；应用新配置应使用重连。首次连接为手动启动服务，关闭 GUI 不会停止服务。
 
-引擎切换使用受保护的 `engine-v2` 目录与事务日志。每次先恢复中断事务，再做版本守卫、完整暂存、备份、注册与启动校验；旧副本不得降低部署所属应用版本或引擎修订。恢复失败保留备份，断开操作的恢复阶段不重启连接；旧密码配置永不自动重启。详见 [Core 更新设计](core-update-design.md)。
+引擎切换使用受保护的 `engine-v2` 目录与事务日志。每次先恢复中断事务，再做版本守卫、完整暂存、备份、注册与启动校验；旧副本不得降低部署所属应用版本或引擎修订。恢复失败保留备份，断开操作的恢复阶段不重启连接；旧密码配置永不自动重启。详见 [引擎部署说明](engine-deployment.md)。

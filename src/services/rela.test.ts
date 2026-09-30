@@ -55,4 +55,11 @@ describe('桌面权限边界', () => {
     vi.stubEnv('VITE_RELA_PREVIEW', 'false');
     await expect(createService()).rejects.toThrow('桌面客户端');
   });
+  it('手动更新只传递版本，由 Native 打开已验证的 Release 页面', async () => {
+    vi.mocked(invoke).mockResolvedValue(undefined);
+    await desktopService.openSoftwareRelease('0.2.0');
+    expect(invoke).toHaveBeenCalledWith('open_software_release', {
+      version: '0.2.0',
+    });
+  });
 });

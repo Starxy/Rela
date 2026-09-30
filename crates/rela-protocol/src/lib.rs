@@ -1,7 +1,7 @@
 //! Rela 前端与 Rust 后端之间的业务模型。不包含网络参数或设备凭据。
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 pub const EASYTIER_TARGET_VERSION: &str = "2.7.0-0a783c8e";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -159,46 +159,17 @@ pub enum UpdateChannel {
     Test,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum UpdatePhase {
-    #[default]
-    Idle,
-    Downloading,
-    Preparing,
-    Restarting,
-    Failed,
-}
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct UpdateProgress {
-    pub phase: UpdatePhase,
-    pub version: Option<String>,
-    pub downloaded: u64,
-    pub total: u64,
-    pub error: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum InstallKind {
-    Installer,
-    Portable,
-}
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UpdateCandidate {
     pub version: String,
     pub notes: String,
     pub published_at: String,
-    pub size: u64,
-    pub core_version: String,
-    pub requires_manual_upgrade: bool,
+    pub release_url: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SoftwareUpdateStatus {
     pub channel: UpdateChannel,
-    pub install_kind: InstallKind,
     pub current_version: String,
     pub checking: bool,
     pub last_checked: Option<String>,

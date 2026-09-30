@@ -26,22 +26,13 @@ impl Fixture {
             purpose: Purpose::Software,
             public_key: STANDARD.encode(key.verifying_key().to_bytes()),
         }];
-        let manager = SoftwareManager::new(root.clone(), config, InstallKind::Portable).unwrap();
+        let manager = SoftwareManager::new(root.clone(), config).unwrap();
         Self { root, key, manager }
     }
-    fn signed(&self, revision: u64, version: &str, channel: &str, minimum: &str) -> Vec<u8> {
-        let package = |extension| {
-            serde_json::json!({
-                "url": format!("https://github.com/Starxy/Rela/releases/download/v{version}/Rela.{extension}"),
-                "size": if extension == "zip" { 234 } else { 123 }, "sha256": "b".repeat(64),
-                "signature": STANDARD.encode(b"fixture signature")
-            })
-        };
+    fn signed(&self, revision: u64, version: &str, channel: &str) -> Vec<u8> {
         let payload = serde_json::to_vec(&serde_json::json!({
-            "schema_version": 1, "revision": revision, "version": version, "channel": channel,
+            "schema_version": 2, "revision": revision, "version": version, "channel": channel,
             "target": "windows-x86_64", "notes": "test", "published_at": "2026-09-29T00:00:00Z",
-            "core_version": "isolated-core", "minimum_app_version": minimum,
-            "installer": package("exe"), "portable": package("zip")
         }))
         .unwrap();
         let signature = self
@@ -79,7 +70,7 @@ fn signed_http_checks_use_conditional_reads_and_keep_cache_after_network_failure
         thread,
     };
     let mut f = Fixture::new();
-    let bytes = f.signed(3, "0.2.0", "stable", "0.1.0");
+    let bytes = f.signed(3, "0.2.0", "stable");
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     f.manager.config.software_stable_url =
         format!("http://{}/software", listener.local_addr().unwrap());
@@ -130,7 +121,7 @@ fn signed_http_checks_use_conditional_reads_and_keep_cache_after_network_failure
 fn software_cache_survives_restart_without_reading_resource_override() {
     let f = Fixture::new();
     assert!(f.manager.status().unwrap().candidate.is_none());
-    let bytes = f.signed(3, "0.2.0", "stable", "0.1.0");
+    let bytes = f.signed(3, "0.2.0", "stable");
     f.manager
         .accept(UpdateChannel::Stable, &bytes, Some("v3".into()))
         .unwrap();
@@ -140,38 +131,28 @@ fn software_cache_survives_restart_without_reading_resource_override() {
         "unreadable-resource-state",
     )
     .unwrap();
-    let restarted = SoftwareManager::new(
-        f.root.clone(),
-        f.manager.config.clone(),
-        InstallKind::Installer,
-    )
-    .unwrap();
+    let restarted = SoftwareManager::new(f.root.clone(), f.manager.config.clone()).unwrap();
     let status = restarted.status().unwrap();
     assert!(status.cached);
     let candidate = status.candidate.unwrap();
     assert_eq!(candidate.version, "0.2.0");
-    // Installed updates also download the signed Portable companion to verify
-    // every NSIS output file and run the matching new recovery helper.
-    assert_eq!(candidate.size, 123 + 234);
-    assert!(!candidate.requires_manual_upgrade);
-    assert_eq!(f.manager.status().unwrap().candidate.unwrap().size, 234);
+    assert_eq!(
+        candidate.release_url,
+        "https://github.com/Starxy/Rela/releases/tag/v0.2.0"
+    );
 }
 
 #[test]
 fn rollback_tampering_channel_confusion_and_failed_commit_preserve_previous() {
     let f = Fixture::new();
     f.manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(3, "0.2.0", "stable", "0.1.0"),
-            None,
-        )
+        .accept(UpdateChannel::Stable, &f.signed(3, "0.2.0", "stable"), None)
         .unwrap();
     for bytes in [
-        f.signed(2, "0.3.0", "stable", "0.1.0"),
-        f.signed(3, "0.3.0", "stable", "0.1.0"),
-        f.signed(4, "0.1.0", "stable", "0.1.0"),
-        f.signed(4, "0.3.0-beta.1", "test", "0.1.0"),
+        f.signed(2, "0.3.0", "stable"),
+        f.signed(3, "0.3.0", "stable"),
+        f.signed(4, "0.1.0", "stable"),
+        f.signed(4, "0.3.0-beta.1", "test"),
     ] {
         assert!(f
             .manager
@@ -179,7 +160,7 @@ fn rollback_tampering_channel_confusion_and_failed_commit_preserve_previous() {
             .is_err());
     }
     let mut tampered: serde_json::Value =
-        serde_json::from_slice(&f.signed(4, "0.3.0", "stable", "0.1.0")).unwrap();
+        serde_json::from_slice(&f.signed(4, "0.3.0", "stable")).unwrap();
     tampered["signature"] = STANDARD.encode([0_u8; 64]).into();
     assert!(f
         .manager
@@ -199,11 +180,7 @@ fn rollback_tampering_channel_confusion_and_failed_commit_preserve_previous() {
     fs::create_dir(&pointer).unwrap();
     assert!(f
         .manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(4, "0.3.0", "stable", "0.1.0"),
-            None
-        )
+        .accept(UpdateChannel::Stable, &f.signed(4, "0.3.0", "stable"), None)
         .is_err());
     fs::remove_dir(&pointer).unwrap();
     fs::rename(pointer.with_extension("backup"), &pointer).unwrap();
@@ -214,19 +191,15 @@ fn rollback_tampering_channel_confusion_and_failed_commit_preserve_previous() {
 }
 
 #[test]
-fn explicit_test_channel_keeps_independent_cache_and_compatibility_gate() {
+fn explicit_test_channel_keeps_independent_cache() {
     let f = Fixture::new();
     f.manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(9, "0.2.0", "stable", "0.1.0"),
-            None,
-        )
+        .accept(UpdateChannel::Stable, &f.signed(9, "0.2.0", "stable"), None)
         .unwrap();
     f.manager
         .accept(
             UpdateChannel::Test,
-            &f.signed(1, "0.3.0-beta.1", "test", "0.2.0"),
+            &f.signed(1, "0.3.0-beta.1", "test"),
             None,
         )
         .unwrap();
@@ -237,13 +210,11 @@ fn explicit_test_channel_keeps_independent_cache_and_compatibility_gate() {
         .candidate
         .unwrap();
     assert_eq!(candidate.version, "0.3.0-beta.1");
-    assert!(candidate.requires_manual_upgrade);
-    let restarted = SoftwareManager::new(
-        f.root.clone(),
-        f.manager.config.clone(),
-        InstallKind::Portable,
-    )
-    .unwrap();
+    assert_eq!(
+        candidate.release_url,
+        "https://github.com/Starxy/Rela/releases/tag/v0.3.0-beta.1"
+    );
+    let restarted = SoftwareManager::new(f.root.clone(), f.manager.config.clone()).unwrap();
     assert_eq!(restarted.status().unwrap().channel, UpdateChannel::Test);
     assert_eq!(
         restarted
@@ -264,101 +235,67 @@ fn explicit_test_channel_keeps_independent_cache_and_compatibility_gate() {
     .unwrap();
     assert!(restarted.status().is_err());
     assert!(restarted
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(8, "0.3.0", "stable", "0.1.0"),
-            None
-        )
+        .accept(UpdateChannel::Stable, &f.signed(8, "0.3.0", "stable"), None)
         .is_err());
     restarted
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(9, "0.2.0", "stable", "0.1.0"),
-            None,
-        )
+        .accept(UpdateChannel::Stable, &f.signed(9, "0.2.0", "stable"), None)
         .unwrap();
     assert!(restarted.status().unwrap().candidate.is_some());
 }
 
 #[test]
-fn selecting_an_update_reverifies_the_exact_confirmed_version_and_upgrade_floor() {
+fn release_link_reverifies_the_displayed_version_and_cache() {
     let f = Fixture::new();
-    assert!(f.manager.select("0.2.0").is_err());
+    assert!(f.manager.release_url("0.2.0").is_err());
     f.manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(1, "0.2.0", "stable", "0.1.0"),
-            None,
-        )
+        .accept(UpdateChannel::Stable, &f.signed(1, "0.2.0", "stable"), None)
         .unwrap();
-    let selected = f.manager.select("0.2.0").unwrap();
-    assert_eq!(selected.manifest.version, Version::new(0, 2, 0));
-    assert_eq!(selected.envelope, f.signed(1, "0.2.0", "stable", "0.1.0"));
-    assert!(f.manager.select("0.1.0").is_err());
-    f.manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(2, "0.3.0", "stable", "0.2.0"),
-            None,
-        )
-        .unwrap();
-    assert!(f.manager.select("0.2.0").is_err());
     assert_eq!(
-        f.manager.select("0.3.0").err().unwrap().code,
-        "manual_upgrade_required"
+        f.manager.release_url("0.2.0").unwrap(),
+        "https://github.com/Starxy/Rela/releases/tag/v0.2.0"
     );
+    for version in ["0.1.0", "../../other", "https://example.com"] {
+        assert!(f.manager.release_url(version).is_err());
+    }
+    f.manager
+        .accept(UpdateChannel::Stable, &f.signed(2, "0.3.0", "stable"), None)
+        .unwrap();
+    assert!(f.manager.release_url("0.2.0").is_err());
+    assert!(f.manager.release_url("0.3.0").is_ok());
+    let pointer = f.manager.pointer(UpdateChannel::Stable).unwrap().unwrap();
+    fs::write(
+        f.root
+            .join("cache")
+            .join(format!("software-{}.json", pointer.envelope_digest)),
+        "damaged",
+    )
+    .unwrap();
+    assert!(f.manager.release_url("0.3.0").is_err());
 }
 
 #[test]
-fn same_version_cannot_replace_packages_core_or_upgrade_floor_at_a_new_revision() {
-    let f = Fixture::new();
-    f.manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(1, "0.2.0", "stable", "0.1.0"),
-            None,
-        )
-        .unwrap();
-    for field in [
-        "installer",
-        "portable",
-        "core_version",
-        "minimum_app_version",
-    ] {
-        let envelope: SignedEnvelope =
-            serde_json::from_slice(&f.signed(2, "0.2.0", "stable", "0.1.0")).unwrap();
-        let mut payload: serde_json::Value =
-            serde_json::from_slice(&STANDARD.decode(envelope.payload).unwrap()).unwrap();
-        match field {
-            "installer" | "portable" => payload[field]["sha256"] = "c".repeat(64).into(),
-            "core_version" => payload[field] = "different-core".into(),
-            _ => payload[field] = "0.1.1".into(),
-        }
-        let payload = serde_json::to_vec(&payload).unwrap();
-        let signature = f
-            .key
-            .sign(&signing_message(Purpose::Software, "software-test-only", &payload).unwrap());
-        let changed = serde_json::to_vec(&SignedEnvelope {
-            format: "rela.signed.v1".into(),
-            key_id: "software-test-only".into(),
-            payload: STANDARD.encode(payload),
-            signature: STANDARD.encode(signature.to_bytes()),
-        })
-        .unwrap();
-        assert!(
-            f.manager
-                .accept(UpdateChannel::Stable, &changed, None)
-                .is_err(),
-            "accepted {field}"
-        );
-        assert_eq!(f.manager.select("0.2.0").unwrap().manifest.revision, 1);
+fn only_newer_versions_are_offered_and_revisions_can_advance() {
+    let mut f = Fixture::new();
+    f.manager.current = Version::new(0, 2, 0);
+    for (revision, version) in [(1, "0.1.0"), (2, "0.2.0")] {
+        f.manager
+            .accept(
+                UpdateChannel::Stable,
+                &f.signed(revision, version, "stable"),
+                None,
+            )
+            .unwrap();
+        assert!(f.manager.status().unwrap().candidate.is_none());
+        assert!(f.manager.release_url(version).is_err());
     }
     f.manager
-        .accept(
-            UpdateChannel::Stable,
-            &f.signed(2, "0.2.0", "stable", "0.1.0"),
-            None,
-        )
+        .accept(UpdateChannel::Stable, &f.signed(3, "0.3.0", "stable"), None)
         .unwrap();
-    assert_eq!(f.manager.select("0.2.0").unwrap().manifest.revision, 2);
+    f.manager
+        .accept(UpdateChannel::Stable, &f.signed(4, "0.3.0", "stable"), None)
+        .unwrap();
+    assert_eq!(
+        f.manager.status().unwrap().candidate.unwrap().version,
+        "0.3.0"
+    );
 }

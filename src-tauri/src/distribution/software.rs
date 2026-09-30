@@ -10,7 +10,7 @@ use fs2::FileExt;
 use rela_manifests::{
     check_revision, sha256, verify_envelope, Channel, Purpose, SoftwareManifest, MAX_ENVELOPE_BYTES,
 };
-use rela_protocol::{AppError, InstallKind, SoftwareUpdateStatus, UpdateCandidate, UpdateChannel};
+use rela_protocol::{AppError, SoftwareUpdateStatus, UpdateCandidate, UpdateChannel};
 use semver::Version;
 use serde::{Deserialize, Serialize};
 use std::{
@@ -24,7 +24,6 @@ pub struct SoftwareManager {
     root: PathBuf,
     config: DistributionConfig,
     fetcher: Fetcher,
-    kind: InstallKind,
     current: Version,
     transaction: Mutex<()>,
     checking: tokio::sync::Mutex<()>,
@@ -59,22 +58,12 @@ struct CacheRef {
     etag: Option<String>,
 }
 
-pub struct SelectedUpdate {
-    pub envelope: Vec<u8>,
-    pub manifest: SoftwareManifest,
-}
-
 impl SoftwareManager {
-    pub fn new(
-        root: PathBuf,
-        config: DistributionConfig,
-        kind: InstallKind,
-    ) -> Result<Self, AppError> {
+    pub fn new(root: PathBuf, config: DistributionConfig) -> Result<Self, AppError> {
         Ok(Self {
             root,
             config,
             fetcher: Fetcher::new()?,
-            kind,
             current: Version::parse(env!("CARGO_PKG_VERSION")).map_err(|_| storage_error())?,
             transaction: Mutex::new(()),
             checking: tokio::sync::Mutex::new(()),
@@ -195,20 +184,6 @@ impl SoftwareManager {
         {
             return Err(manifest_error("软件清单不能退回已接受版本之前。"));
         }
-        if let Some(previous) = &previous {
-            if manifest.version == previous.version && payload_digest != previous.payload_digest {
-                let (_, old) = self.cache(channel, previous)?;
-                if manifest.installer != old.installer
-                    || manifest.portable != old.portable
-                    || manifest.core_version != old.core_version
-                    || manifest.minimum_app_version != old.minimum_app_version
-                {
-                    return Err(manifest_error(
-                        "同一软件版本的发布包和兼容要求不能改变，请发布新版本。",
-                    ));
-                }
-            }
-        }
         platform::atomic_write(
             &self
                 .root
@@ -239,20 +214,14 @@ impl SoftwareManager {
         let candidate = candidate
             .filter(|manifest| manifest.version > self.current)
             .map(|manifest| UpdateCandidate {
+                release_url: manifest.release_url(),
                 version: manifest.version.to_string(),
                 notes: manifest.notes,
                 published_at: manifest.published_at,
-                size: match self.kind {
-                    InstallKind::Installer => manifest.installer.size + manifest.portable.size,
-                    InstallKind::Portable => manifest.portable.size,
-                },
-                core_version: manifest.core_version,
-                requires_manual_upgrade: self.current < manifest.minimum_app_version,
             });
         let metadata = self.metadata.lock().map_err(|_| storage_error())?;
         Ok(SoftwareUpdateStatus {
             channel,
-            install_kind: self.kind,
             current_version: self.current.to_string(),
             checking: self.checking.try_lock().is_err(),
             last_checked: metadata.last_checked.clone(),
@@ -262,25 +231,13 @@ impl SoftwareManager {
         })
     }
 
-    /// Bind confirmation to the exact version currently displayed in the UI.
-    /// The helper independently verifies the returned envelope and package again.
-    pub fn select(&self, displayed_version: &str) -> Result<SelectedUpdate, AppError> {
-        let _lock = self.lock()?;
-        let channel = self.channel()?;
-        let pointer = self
-            .pointer(channel)?
-            .ok_or_else(|| manifest_error("请先检查软件更新。"))?;
-        let (envelope, manifest) = self.cache(channel, &pointer)?;
-        if manifest.version.to_string() != displayed_version || manifest.version <= self.current {
-            return Err(manifest_error("更新信息已改变，请重新检查并确认版本。"));
-        }
-        if self.current < manifest.minimum_app_version {
-            return Err(AppError::new(
-                "manual_upgrade_required",
-                "当前版本需要先手动升级。",
-            ));
-        }
-        Ok(SelectedUpdate { envelope, manifest })
+    pub fn release_url(&self, displayed_version: &str) -> Result<String, AppError> {
+        let candidate = self
+            .status()?
+            .candidate
+            .filter(|candidate| candidate.version == displayed_version)
+            .ok_or_else(|| manifest_error("更新信息已改变，请重新检查版本。"))?;
+        Ok(candidate.release_url)
     }
 
     pub fn set_channel(&self, channel: UpdateChannel) -> Result<SoftwareUpdateStatus, AppError> {

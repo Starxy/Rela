@@ -148,24 +148,14 @@ fn validates_resource_protocols_without_shell_or_credential_inputs() {
 }
 
 fn software() -> SoftwareManifest {
-    let package = |file: &str| Package {
-        url: format!("{REPOSITORY}/releases/download/v0.2.0/{file}"),
-        size: 100,
-        sha256: "ab".repeat(32),
-        signature: STANDARD.encode(b"synthetic-artifact-signature"),
-    };
     SoftwareManifest {
-        schema_version: 1,
+        schema_version: 2,
         revision: 1,
         version: Version::new(0, 2, 0),
         channel: Channel::Stable,
         target: "windows-x86_64".into(),
         notes: "测试更新".into(),
         published_at: "2026-09-29T00:00:00Z".into(),
-        core_version: "2.7.0-0a783c8e".into(),
-        minimum_app_version: Version::new(0, 1, 0),
-        installer: package("Rela_0.2.0_x64-setup.exe"),
-        portable: package("Rela_0.2.0_x64-portable.zip"),
     }
 }
 
@@ -173,22 +163,48 @@ fn software() -> SoftwareManifest {
 fn software_is_channel_architecture_and_release_tag_bound() {
     let mut manifest = software();
     manifest.validate(Channel::Stable).unwrap();
-    assert!(manifest.newer_than(&Version::new(0, 1, 0)).unwrap());
-    assert!(!manifest.newer_than(&Version::new(0, 2, 0)).unwrap());
-    assert!(!manifest.newer_than(&Version::new(0, 3, 0)).unwrap());
-    assert!(manifest.newer_than(&Version::new(0, 0, 1)).is_err());
+    assert_eq!(
+        manifest.release_url(),
+        format!("{REPOSITORY}/releases/tag/v0.2.0")
+    );
     assert!(manifest.validate(Channel::Test).is_err());
     manifest.target = "windows-aarch64".into();
     assert!(manifest.validate(Channel::Stable).is_err());
-    for url in [
-        "https://github.com/Starxy/Rela/releases/latest/download/setup.exe",
-        "https://example.com/releases/download/v0.2.0/setup.exe",
-        "https://github.com/Starxy/Rela/releases/download/v0.1.0/setup.exe",
-        "https://github.com/Starxy/Rela/releases/download/v0.2.0/%2e%2e/setup.exe",
-        "https://github.com/Starxy/Rela/releases/download/v0.2.0/setup.exe?token=secret",
+    manifest = software();
+    manifest.version = Version::parse("0.3.0-beta.1").unwrap();
+    assert!(manifest.validate(Channel::Stable).is_err());
+    manifest.channel = Channel::Test;
+    manifest.validate(Channel::Test).unwrap();
+    assert_eq!(
+        manifest.release_url(),
+        format!("{REPOSITORY}/releases/tag/v0.3.0-beta.1")
+    );
+    manifest.version = Version::parse("0.3.0+local").unwrap();
+    assert!(manifest.validate(Channel::Test).is_err());
+}
+
+#[test]
+fn discovery_manifest_rejects_installation_fields_and_arbitrary_urls() {
+    for field in [
+        "installer",
+        "portable",
+        "minimum_app_version",
+        "release_url",
     ] {
-        let mut manifest = software();
-        manifest.installer.url = url.into();
-        assert!(manifest.validate(Channel::Stable).is_err());
+        let mut value = serde_json::to_value(software()).unwrap();
+        value[field] = "https://example.com".into();
+        assert!(
+            SoftwareManifest::parse(&serde_json::to_vec(&value).unwrap(), Channel::Stable).is_err()
+        );
     }
+    let mut value = serde_json::to_value(software()).unwrap();
+    value["version"] = "../../other".into();
+    assert!(
+        SoftwareManifest::parse(&serde_json::to_vec(&value).unwrap(), Channel::Stable).is_err()
+    );
+    value = serde_json::to_value(software()).unwrap();
+    value["schema_version"] = 1.into();
+    assert!(
+        SoftwareManifest::parse(&serde_json::to_vec(&value).unwrap(), Channel::Stable).is_err()
+    );
 }
