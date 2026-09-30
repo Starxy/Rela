@@ -25,22 +25,33 @@ impl DistributionConfig {
         if config.schema_version != 1 {
             return Err(manifest_error("分发配置格式不受支持。"));
         }
-        for endpoint in [
-            &config.resources_url,
-            &config.software_stable_url,
-            &config.software_test_url,
+        for (endpoint, expected_path) in [
+            (
+                &config.resources_url,
+                "/Starxy/Rela/refs/heads/main/resources.json",
+            ),
+            (
+                &config.software_stable_url,
+                "/Starxy/Rela/refs/heads/main/software/stable.json",
+            ),
+            (
+                &config.software_test_url,
+                "/Starxy/Rela/refs/heads/main/software/test.json",
+            ),
         ] {
             let url = Url::parse(endpoint).map_err(|_| manifest_error("清单入口无效。"))?;
             if url.scheme() != "https"
                 || url.host_str() != Some("raw.githubusercontent.com")
-                || !url.path().starts_with("/Starxy/Rela/distribution/")
+                || url.path() != expected_path
                 || !url.username().is_empty()
                 || url.password().is_some()
                 || url.query().is_some()
                 || url.fragment().is_some()
                 || url.port().is_some()
             {
-                return Err(manifest_error("清单入口必须位于公开分发分支。"));
+                return Err(manifest_error(
+                    "清单入口必须位于公开仓库 main 分支的固定路径。",
+                ));
             }
         }
         Ok(config)

@@ -137,7 +137,7 @@ pub struct RefreshTicket {
     revision: u64,
     manual: bool,
     pub etag: Option<String>,
-    pub cached_envelope: Option<Vec<u8>>,
+    pub cached_resources: Option<Vec<u8>>,
 }
 
 pub struct ConnectionSnapshot {
@@ -303,8 +303,13 @@ impl ConfigStore {
         if sha256(&bytes) != cache.envelope_digest {
             return Err(manifest_error("资源缓存校验失败，请手动更新线上配置。"));
         }
-        let payload =
-            verify_envelope(&bytes, Purpose::Resources, &self.keys).map_err(manifest_error)?;
+        let payload = if ResourceManifest::parse(&bytes).is_ok() {
+            bytes
+        } else {
+            // Keep previously verified signed caches readable during the move to resources.json.
+            // New downloads are parsed directly and never use this compatibility path.
+            verify_envelope(&bytes, Purpose::Resources, &self.keys).map_err(manifest_error)?
+        };
         if sha256(&payload) != cache.payload_digest {
             return Err(manifest_error("资源缓存内容不匹配。"));
         }
@@ -312,7 +317,7 @@ impl ConfigStore {
         if manifest.version != cache.version {
             return Err(manifest_error("资源缓存版本不匹配。"));
         }
-        Ok(Some((bytes, manifest)))
+        Ok(Some((payload, manifest)))
     }
 
     pub fn configuration(&self) -> Result<NetworkConfigView, AppError> {
@@ -389,7 +394,7 @@ impl ConfigStore {
             state.local.network_name = manifest.network;
             state.local.peers = manifest.peer;
         }
-        // Preserve the last accepted revision floor, even when a corrupt cache cannot be used.
+        // Keep the previous resource cache reference; reset only affects local settings.
         state.credential = None;
         state.local_override = false;
         state.applied = old_applied;
@@ -403,15 +408,19 @@ impl ConfigStore {
         if state.local_override && !manual {
             return Ok(None);
         }
-        let cached_envelope = self.cache(&state).ok().flatten().map(|(bytes, _)| bytes);
-        let etag = cached_envelope
-            .as_ref()
-            .and_then(|_| state.resources.as_ref()?.etag.clone());
+        let cached_resources = self.cache(&state).ok().flatten().map(|(bytes, _)| bytes);
+        let etag = cached_resources.as_ref().and_then(|_| {
+            let cache = state.resources.as_ref()?;
+            // An ETag for the old signed document does not belong to the new plain file.
+            (cache.envelope_digest == cache.payload_digest)
+                .then(|| cache.etag.clone())
+                .flatten()
+        });
         Ok(Some(RefreshTicket {
             revision: state.revision,
             manual,
             etag,
-            cached_envelope,
+            cached_resources,
         }))
     }
 
@@ -421,10 +430,8 @@ impl ConfigStore {
         bytes: &[u8],
         etag: Option<String>,
     ) -> Result<SyncStatus, AppError> {
-        let payload =
-            verify_envelope(bytes, Purpose::Resources, &self.keys).map_err(manifest_error)?;
-        let manifest = ResourceManifest::parse(&payload).map_err(manifest_error)?;
-        let payload_digest = sha256(&payload);
+        let manifest = ResourceManifest::parse(bytes).map_err(manifest_error)?;
+        let payload_digest = sha256(bytes);
         let envelope_digest = sha256(bytes);
         let _lock = self.lock()?;
         let mut state = self.read_state()?;
@@ -434,15 +441,8 @@ impl ConfigStore {
                 "配置已在获取期间修改，已保留本地设置，请重新更新。",
             ));
         }
-        check_revision(
-            manifest.version,
-            &payload_digest,
-            state
-                .resources
-                .as_ref()
-                .map(|cache| (cache.version, cache.payload_digest.as_str())),
-        )
-        .map_err(manifest_error)?;
+        // The current contents of the fixed main/resources.json URL are authoritative.
+        // Editing that file does not require a separate signing or revision publication step.
         platform::atomic_write(
             &self
                 .root

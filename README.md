@@ -4,7 +4,7 @@
 
 ## 当前功能
 
-- 启动时匿名获取并验签公开 GitHub 资源清单，默认网络为 `lab201`、节点为 `tcp://47.93.55.228:12010`。无缓存时等待获取，不内置实验室线路兜底。
+- 启动时静默匿名获取 main 根目录的 resources.json 并校验格式，默认网络为 `lab201`、节点为 `tcp://47.93.55.228:12010`。无缓存时等待获取，不内置实验室线路兜底。
 - 本地覆盖网络名或节点后暂停清单自动获取，重启后保留；手动“更新线上配置”成功后覆盖线上字段并恢复自动刷新。私有模式、禁用 P2P 和网关仍由本机管理。
 - 从有效缓存显示 SSH、Web、NAS 资源；连接后进行 TCP 探测，未连接时显示“未检测”。首份 Spark 仅为占位。
 - 独立检查软件稳定/测试渠道，验证清单签名、架构和版本，保留可信缓存；发现新版后提醒手动更新，点击打开对应 GitHub Release 页面。
@@ -20,7 +20,7 @@
 
 ## 分发与配置
 
-使用公开仓库 [Starxy/Rela](https://github.com/Starxy/Rela) 分发，客户端无需 GitHub 登录。默认 network 为 `lab201`、peer 为 `tcp://47.93.55.228:12010`，首份资源为 Spark SSH 占位 `192.168.200.10:22`。资源修订 1 已签名、发布并接入客户端；格式与入口见 [清单约定](docs/distribution-format.md)。软件清单入口已确定，测试软件版本尚未发布。
+使用公开仓库 [Starxy/Rela](https://github.com/Starxy/Rela) 分发，客户端无需 GitHub 登录。默认 network 为 `lab201`、peer 为 `tcp://47.93.55.228:12010`，首份资源为 Spark SSH 占位 `192.168.200.10:22`。资源与网络配置只维护根目录 [resources.json](resources.json)，客户端读取固定 raw 地址的最新有效内容，无需签名或提高版本号；格式与入口见 [清单约定](docs/distribution-format.md)。软件清单入口已确定，测试软件版本尚未发布。
 
 线上清单只管理网络名、节点及资源。私有模式、禁用 P2P、可选网关由本机设置管理。用户覆盖 network 或 peer 后停止清单自动获取，重启后保持；手动点击“更新线上配置”允许覆盖 network/peer 和资源，校验保存成功后恢复自动刷新。软件更新检查独立进行。
 
@@ -94,7 +94,7 @@ CI 使用不带真实密钥的 debug 构建，不连接实验室网络。生产�
 | ------------------- | --------------------------------------------------------------------------- |
 | 网络配置与缓存引用  | Tauri 应用配置目录的 `configuration.json`，原子替换                         |
 | 私有 credential     | 同目录 `credentials/*.dat`，当前用户 DPAPI 加密                             |
-| 已验签清单          | 同目录 `cache/`，读取时重新核验签名与摘要                                   |
+| 资源缓存与软件清单  | 同目录 `cache/`；资源检查摘要，软件检查签名与摘要                           |
 | 软件更新状态        | 同目录 `update-settings.json`、`software-stable.json`、`software-test.json` |
 | 设备名称            | 同目录 `preferences.json`                                                   |
 | 服务程序、Core 配置 | `%ProgramData%/Rela/`，限制为系统和管理员访问                               |
@@ -105,6 +105,7 @@ CI 使用不带真实密钥的 debug 构建，不连接实验室网络。生产�
 ## 目录
 
 ```text
+resources.json           生产资源与网络配置，main 根目录固定入口
 config/                  公共样本、固定引擎版本、分发入口与验签公钥
 scripts/                 Core 下载校验、隔离验证、清单签名与发布
 packaging/portable/      便携包说明、模式标识和服务清理工具
@@ -112,7 +113,7 @@ src/                     React 界面、业务服务与浏览器演示
 src-tauri/src/commands/   Tauri 业务命令
 src-tauri/src/easytier/   服务生命周期、CLI 与 RPC 状态解析
 src-tauri/src/platform/   Windows 权限、DPAPI、SCM、网卡和 ICMP
-src-tauri/src/distribution/  签名获取、配置事务、资源探测、软件版本检查
+src-tauri/src/distribution/  配置获取与事务、资源探测、签名软件版本检查
 src-tauri/src/network_config.rs  配置校验、旧存储迁移和 Core TOML
 src-tauri/installer/      安装器占用检查和共享服务保留钩子
 crates/rela-protocol/     共享业务模型

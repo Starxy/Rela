@@ -26,13 +26,16 @@ impl Fixture {
             }],
         )
     }
-    fn envelope(&self, version: u64, network: &str) -> Vec<u8> {
+    fn document(&self, version: u64, network: &str) -> Vec<u8> {
         let mut value: serde_json::Value =
             serde_json::from_slice(include_bytes!("../../../../config/resources.example.json"))
                 .unwrap();
         value["version"] = version.into();
         value["network"] = network.into();
-        let payload = serde_json::to_vec(&value).unwrap();
+        serde_json::to_vec(&value).unwrap()
+    }
+    fn envelope(&self, version: u64, network: &str) -> Vec<u8> {
+        let payload = self.document(version, network);
         let signature = self
             .key
             .sign(&signing_message(Purpose::Resources, "test-only", &payload).unwrap());
@@ -49,7 +52,7 @@ impl Fixture {
         store
             .apply_resources(
                 store.begin_refresh(true).unwrap().unwrap(),
-                &self.envelope(version, "lab201"),
+                &self.document(version, "lab201"),
                 Some(format!("\"v{version}\"")),
             )
             .unwrap()
@@ -107,7 +110,7 @@ fn local_override_persists_and_manual_cached_refresh_restores_defaults_only() {
     assert!(fixture.store().begin_refresh(false).unwrap().is_none());
     let ticket = restarted.begin_refresh(true).unwrap().unwrap();
     assert_eq!(ticket.etag.as_deref(), Some("\"v1\""));
-    let bytes = ticket.cached_envelope.clone().unwrap();
+    let bytes = ticket.cached_resources.clone().unwrap();
     let status = restarted
         .apply_resources(ticket, &bytes, Some("\"v1\"".into()))
         .unwrap();
@@ -130,7 +133,7 @@ fn in_flight_auto_and_manual_requests_cannot_overwrite_newer_edits() {
         view.private_mode = !view.private_mode;
         store.save(update(view, None)).unwrap();
         let error = store
-            .apply_resources(ticket, &fixture.envelope(2, "lab201"), None)
+            .apply_resources(ticket, &fixture.document(2, "lab201"), None)
             .unwrap_err();
         assert_eq!(error.code, "configuration_changed");
         assert_eq!(store.status().unwrap().resource_version, Some(1));
@@ -141,7 +144,7 @@ fn in_flight_auto_and_manual_requests_cannot_overwrite_newer_edits() {
     view.peers = vec!["tcp://backup.local:2222".into()];
     store.save(update(view, None)).unwrap();
     assert!(store
-        .apply_resources(ticket, &fixture.envelope(2, "lab201"), None)
+        .apply_resources(ticket, &fixture.document(2, "lab201"), None)
         .is_err());
     assert_eq!(
         fixture.store().configuration().unwrap().peers,
@@ -150,15 +153,15 @@ fn in_flight_auto_and_manual_requests_cannot_overwrite_newer_edits() {
 }
 
 #[test]
-fn tamper_replay_and_same_revision_changes_keep_previous_settings() {
+fn invalid_content_and_corrupt_cache_preserve_current_settings() {
     let fixture = Fixture::new();
     fixture.apply(2);
     let store = fixture.store();
     let original = fs::read(fixture.root.join("configuration.json")).unwrap();
     for bytes in [
-        fixture.envelope(1, "lab201"),
-        fixture.envelope(2, "other"),
-        b"unsigned".to_vec(),
+        fixture.envelope(2, "lab201"),
+        b"not JSON".to_vec(),
+        br#"{"schema_version":1,"version":2,"network":"lab201","peer":["tcp://127.0.0.1:1111"],"resources":[],"private_mode":false}"#.to_vec(),
     ] {
         let ticket = store.begin_refresh(true).unwrap().unwrap();
         assert!(store.apply_resources(ticket, &bytes, None).is_err());
@@ -179,12 +182,78 @@ fn tamper_replay_and_same_revision_changes_keep_previous_settings() {
     .unwrap();
     assert!(store.resources().is_err());
     let ticket = store.begin_refresh(true).unwrap().unwrap();
-    assert!(ticket.etag.is_none() && ticket.cached_envelope.is_none());
-    assert!(store
-        .apply_resources(ticket, &fixture.envelope(1, "lab201"), None)
-        .is_err());
+    assert!(ticket.etag.is_none() && ticket.cached_resources.is_none());
+    store
+        .apply_resources(ticket, &fixture.document(1, "lab201"), None)
+        .unwrap();
+    assert_eq!(store.status().unwrap().resource_version, Some(1));
     fixture.apply(3);
     assert_eq!(store.resources().unwrap().len(), 1);
+}
+
+#[test]
+fn latest_file_contents_apply_without_a_separate_version_publication() {
+    let fixture = Fixture::new();
+    fixture.apply(2);
+    let store = fixture.store();
+    let mut latest: serde_json::Value =
+        serde_json::from_slice(&fixture.document(2, "lab201")).unwrap();
+    latest["peer"] = serde_json::json!(["tcp://127.0.0.1:12011"]);
+    let bytes = serde_json::to_vec(&latest).unwrap();
+    store
+        .apply_resources(store.begin_refresh(false).unwrap().unwrap(), &bytes, None)
+        .unwrap();
+    assert_eq!(
+        store.configuration().unwrap().peers,
+        ["tcp://127.0.0.1:12011"]
+    );
+    // Main can revert a configuration commit; use the valid contents currently at the fixed URL.
+    fixture.apply(1);
+    assert_eq!(store.status().unwrap().resource_version, Some(1));
+    assert_eq!(
+        store.configuration().unwrap().peers,
+        ["tcp://47.93.55.228:12010"]
+    );
+}
+
+#[test]
+fn old_signed_cache_stays_readable_then_moves_to_plain_resources_json() {
+    let fixture = Fixture::new();
+    fixture.apply(1);
+    let store = fixture.store();
+    let document = fixture.document(1, "lab201");
+    let envelope = fixture.envelope(1, "lab201");
+    let mut state = store.read_state().unwrap();
+    let reference = state.resources.as_mut().unwrap();
+    reference.envelope_digest = sha256(&envelope);
+    reference.payload_digest = sha256(&document);
+    reference.etag = Some("\"legacy-signed-feed\"".into());
+    fs::write(
+        fixture
+            .root
+            .join("cache")
+            .join(format!("resources-{}.json", reference.envelope_digest)),
+        envelope,
+    )
+    .unwrap();
+    store.commit(&mut state).unwrap();
+    assert_eq!(store.resources().unwrap().len(), 1);
+    let ticket = store.begin_refresh(false).unwrap().unwrap();
+    assert!(ticket.etag.is_none());
+    assert_eq!(
+        ticket.cached_resources.as_deref(),
+        Some(document.as_slice())
+    );
+    store
+        .apply_resources(ticket, &document, Some("\"main-json\"".into()))
+        .unwrap();
+    let state = store.read_state().unwrap();
+    let reference = state.resources.unwrap();
+    assert_eq!(reference.envelope_digest, reference.payload_digest);
+    assert_eq!(
+        store.begin_refresh(true).unwrap().unwrap().etag.as_deref(),
+        Some("\"main-json\"")
+    );
 }
 
 #[test]
@@ -253,7 +322,7 @@ fn failed_pointer_replace_does_not_commit_staged_public_or_private_objects() {
     readonly.set_readonly(true);
     fs::set_permissions(&path, readonly).unwrap();
     let ticket = store.begin_refresh(true).unwrap().unwrap();
-    let result = store.apply_resources(ticket, &fixture.envelope(2, "lab201"), None);
+    let result = store.apply_resources(ticket, &fixture.document(2, "lab201"), None);
     fs::set_permissions(&path, original_permissions).unwrap();
     assert!(result.is_err());
     assert_eq!(fs::read(path).unwrap(), original);
@@ -295,7 +364,7 @@ fn network_binding_and_cross_process_lock_are_preserved() {
     assert!(store.save(update(changed, None)).is_err());
     let ticket = store.begin_refresh(true).unwrap().unwrap();
     store
-        .apply_resources(ticket, &fixture.envelope(2, "different"), None)
+        .apply_resources(ticket, &fixture.document(2, "different"), None)
         .unwrap();
     assert!(!store.configuration().unwrap().has_credential);
     let lock = store.lock().unwrap();

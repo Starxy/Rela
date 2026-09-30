@@ -4,7 +4,7 @@ use super::{
     DistributionConfig,
 };
 use crate::platform;
-use rela_manifests::{Resource, ResourceKind, MAX_ENVELOPE_BYTES};
+use rela_manifests::{Resource, ResourceKind, MAX_PAYLOAD_BYTES};
 use rela_protocol::{AppError, Availability, LabResource, ResourceSyncStatus};
 use std::{
     path::PathBuf,
@@ -75,12 +75,12 @@ impl ResourceManager {
                 .fetch(
                     &self.config.resources_url,
                     ticket.etag.as_deref(),
-                    MAX_ENVELOPE_BYTES,
+                    MAX_PAYLOAD_BYTES,
                 )
                 .await?
             {
                 Response::NotModified => {
-                    let bytes = ticket.cached_envelope.clone().ok_or_else(|| {
+                    let bytes = ticket.cached_resources.clone().ok_or_else(|| {
                         AppError::new("invalid_manifest", "没有已验证缓存，请重试。")
                     })?;
                     let etag = ticket.etag.clone();
@@ -221,9 +221,6 @@ fn internal() -> AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use base64::{engine::general_purpose::STANDARD, Engine};
-    use ed25519_dalek::{Signer, SigningKey};
-    use rela_manifests::{signing_message, PublicKey, Purpose, SignedEnvelope};
     use std::{
         fs,
         net::TcpListener,
@@ -240,13 +237,7 @@ mod tests {
                 .unwrap()
                 .as_nanos()
         ));
-        let key = SigningKey::from_bytes(&[17; 32]);
-        let mut config = DistributionConfig::bundled().unwrap();
-        config.keys = vec![PublicKey {
-            id: "probe-test-only".into(),
-            purpose: Purpose::Resources,
-            public_key: STANDARD.encode(key.verifying_key().to_bytes()),
-        }];
+        let config = DistributionConfig::bundled().unwrap();
         let manager = ResourceManager::new(root.clone(), config).unwrap();
         let open = TcpListener::bind("127.0.0.1:0").unwrap();
         let closed = TcpListener::bind("127.0.0.1:0").unwrap();
@@ -257,20 +248,11 @@ mod tests {
                 { "id": "open", "name": "Open", "kind": "ssh", "address": "127.0.0.1", "port": open.local_addr().unwrap().port(), "description": "" },
                 { "id": "closed", "name": "Closed", "kind": "ssh", "address": "127.0.0.1", "port": closed_port, "description": "" }
             ] })).unwrap();
-        let signature =
-            key.sign(&signing_message(Purpose::Resources, "probe-test-only", &payload).unwrap());
-        let envelope = serde_json::to_vec(&SignedEnvelope {
-            format: "rela.signed.v1".into(),
-            key_id: "probe-test-only".into(),
-            payload: STANDARD.encode(payload),
-            signature: STANDARD.encode(signature.to_bytes()),
-        })
-        .unwrap();
         manager
             .store
             .apply_resources(
                 manager.store.begin_refresh(true).unwrap().unwrap(),
-                &envelope,
+                &payload,
                 None,
             )
             .unwrap();

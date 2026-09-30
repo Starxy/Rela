@@ -1,8 +1,8 @@
 {
   "schema_version": 1,
-  "resources_url": "https://raw.githubusercontent.com/Starxy/Rela/distribution/resources/stable.json",
-  "software_stable_url": "https://raw.githubusercontent.com/Starxy/Rela/distribution/software/stable.json",
-  "software_test_url": "https://raw.githubusercontent.com/Starxy/Rela/distribution/software/test.json",
+  "resources_url": "https://raw.githubusercontent.com/Starxy/Rela/refs/heads/main/resources.json",
+  "software_stable_url": "https://raw.githubusercontent.com/Starxy/Rela/refs/heads/main/software/stable.json",
+  "software_test_url": "https://raw.githubusercontent.com/Starxy/Rela/refs/heads/main/software/test.json",
   "keys": [
     {
       "id": "resources-20260929",

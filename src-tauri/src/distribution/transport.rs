@@ -239,7 +239,7 @@ mod tests {
         }
         assert!(allowed_url(
             &Url::parse(
-                "https://raw.githubusercontent.com/Starxy/Rela/distribution/resources/stable.json"
+                "https://raw.githubusercontent.com/Starxy/Rela/refs/heads/main/resources.json"
             )
             .unwrap(),
             false

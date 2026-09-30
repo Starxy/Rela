@@ -39,7 +39,7 @@ Update 使用相同配置字段，但把 `has_credential` 换成可选 `credenti
 
 ### 线上配置与软件检查
 
-- 远程清单使用 `schema_version`、`version`、`network`、`peer`、`resources`，`network`/`peer` 映射到本地 `network_name`/`peers`。样本见 [resources.example.json](../config/resources.example.json)。
+- 远程清单使用 `schema_version`、`version`、`network`、`peer`、`resources`，`network`/`peer` 映射到本地 `network_name`/`peers`。生产配置见 main 根目录 [resources.json](../resources.json)，启动静默或手动更新读取固定地址的最新有效内容；version 仅作展示，不要求递增。
 - 远程不管理 `private_mode`、`disable_p2p`、`gateway_ip`、设备偏好或 credential。
 - 本地 network/peer 覆盖状态由 Native 持久化。存在覆盖时，自动检查不得发起线上清单请求；保存本地配置后，已经在途的自动请求不得覆盖较新的修改。
 - 手动更新允许覆盖清单管理的 network/peer 和资源，成功保存后清除覆盖状态并恢复自动刷新；失败保留本地修改。调用方不能借此设置本机开关、网关或绕过凭据绑定校验。
@@ -50,7 +50,7 @@ Update 使用相同配置字段，但把 `has_credential` 换成可选 `credenti
 
 `SoftwareUpdateStatus` 包含 channel、current_version、checking、last_checked、last_error、candidate、cached。candidate 包含 version、notes、published_at、release_url。只提示更高 SemVer；无候选不等于检查成功，需结合 last_checked/last_error。失败保留可信缓存并标记 cached。release_url 由 Native 使用固定仓库和已验证版本生成；打开命令只接受 version，重新验证缓存与当前候选，拒绝过时版本。软件本体由用户在浏览器下载并手动更新。
 
-完整规则见[分发与配置约定](distribution-config-decisions.md)和[签名清单格式](distribution-format.md)。
+完整规则见[分发与配置约定](distribution-config-decisions.md)和[资源与软件清单格式](distribution-format.md)。
 
 ### 连接状态
 
