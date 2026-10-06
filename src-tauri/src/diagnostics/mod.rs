@@ -48,12 +48,13 @@ pub fn report(status: &ConnectionStatus) -> DiagnosticReport {
                 level: match status.gateway {
                     GatewayState::Online => CheckLevel::Pass,
                     GatewayState::Offline => CheckLevel::Warning,
-                    GatewayState::Unknown => CheckLevel::Skipped,
+                    GatewayState::Unknown | GatewayState::NotConfigured => CheckLevel::Skipped,
                 },
                 message: match status.gateway {
                     GatewayState::Online => format!("{} ms", status.latency_ms.unwrap_or_default()),
                     GatewayState::Offline => "未响应 ICMP 探测".into(),
                     GatewayState::Unknown => "未连接或未设置网关地址".into(),
+                    GatewayState::NotConfigured => "未设置校园网关地址，已跳过 ICMP 探测".into(),
                 },
             },
             DiagnosticCheck {

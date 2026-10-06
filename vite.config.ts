@@ -14,5 +14,5 @@ export default defineConfig({
   },
   envPrefix: ['VITE_'],
   build: { target: 'es2022' },
-  test: { environment: 'node', include: ['src/**/*.test.ts'] },
+  test: { environment: 'node', include: ['src/**/*.test.{ts,tsx}'] },
 });

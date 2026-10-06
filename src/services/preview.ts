@@ -108,9 +108,14 @@ export function createPreviewService(
     connected,
     core: connected ? 'running' : 'stopped',
     virtual_ip: connected ? '10.144.144.23' : null,
-    gateway: connected ? 'online' : 'unknown',
+    gateway: connected
+      ? network.gateway_ip
+        ? 'online'
+        : 'not_configured'
+      : 'unknown',
     latency_ms: connected ? 24 : null,
     connection_type: connected ? 'direct' : null,
+    metrics_target: connected ? (network.gateway_ip ?? '10.144.144.1') : null,
     resources_available: connected ? 3 : 0,
     resources_total: resourceFixtures.length,
     last_error: null,
@@ -172,8 +177,12 @@ export function createPreviewService(
           {
             id: 'gateway',
             label: '校园网关',
-            level: connected ? 'pass' : 'skipped',
-            message: connected ? '24 ms' : '未检测',
+            level: connected && network.gateway_ip ? 'pass' : 'skipped',
+            message: !network.gateway_ip
+              ? '未设置校园网关地址'
+              : connected
+                ? '24 ms'
+                : '未检测',
           },
           {
             id: 'resources',
@@ -213,7 +222,7 @@ export function createPreviewService(
         easytier_running: null,
         engine_owner_app: null,
         engine_revision: null,
-        protocol: 9,
+        protocol: 10,
       };
     },
     async getPreferences() {

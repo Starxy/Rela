@@ -5,7 +5,8 @@ Rela Portable — Windows x64 免安装版
    请勿在压缩包内直接运行，也不要只复制一个 EXE。
 2. 电脑需要 Microsoft Edge WebView2 Runtime；若启动提示缺少运行库，可从微软安装：
    https://developer.microsoft.com/microsoft-edge/webview2/
-3. 连接、断开和重连需要同意 Windows UAC 授权。
+3. 首次连接需要同意 Windows UAC 授权；之后同一 Windows 用户的日常连接、断开和重连无需重复授权。
+   更换网络引擎、网络参数、credential 或设备名称时需再次授权。
 4. 最小化或关闭窗口会隐藏到托盘。点击托盘图标恢复，右键选择“退出 Rela”退出界面。
    退出界面后网络连接继续保持；需要断开时请使用首页开关。
 

@@ -1,4 +1,4 @@
-//! Windows 系统集成。常规界面不提权；服务变更使用同一 Rela 程序的一次性提权入口。
+//! Windows 系统集成。普通启停使用已授权的服务权限；部署与配置变更使用一次性提权入口。
 use rela_protocol::AppError;
 use std::{
     fs::{self, OpenOptions},

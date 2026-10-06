@@ -1,4 +1,12 @@
 import type { ConnectionStatus } from '../types';
+import {
+  connectionLabel,
+  connectionTypeLabel,
+  gatewayLabel,
+  latencyLabel,
+  latencyPlaceholder,
+  metricsDescription,
+} from '../connection-status';
 
 export function ConnectionDetails({
   status,
@@ -12,7 +20,7 @@ export function ConnectionDetails({
       <dl className="detail-list">
         <div>
           <dt>连接状态</dt>
-          <dd>{status ? (status.connected ? '已连接' : '未连接') : '未知'}</dd>
+          <dd>{connectionLabel(status, error)}</dd>
         </div>
         <div>
           <dt>虚拟 IP</dt>
@@ -20,30 +28,28 @@ export function ConnectionDetails({
         </div>
         <div>
           <dt>校园网关</dt>
-          <dd>
-            {status?.gateway === 'online'
-              ? '正常'
-              : status?.gateway === 'offline'
-                ? '不可达'
-                : '—'}
-          </dd>
+          <dd>{gatewayLabel(status)}</dd>
         </div>
         <div>
-          <dt>延迟</dt>
-          <dd>
-            {status?.latency_ms != null ? `${status.latency_ms} ms` : '—'}
+          <dt>{latencyLabel(status)}</dt>
+          <dd title={metricsDescription(status)}>
+            {status?.latency_ms != null
+              ? `${status.latency_ms} ms`
+              : latencyPlaceholder(status)}
           </dd>
         </div>
         <div>
           <dt>连接方式</dt>
-          <dd>
-            {status?.connection_type === 'direct'
-              ? '直连'
-              : status?.connection_type === 'relay'
-                ? '中继'
-                : '—'}
+          <dd title={metricsDescription(status)}>
+            {connectionTypeLabel(status)}
           </dd>
         </div>
+        {status?.metrics_target && (
+          <div>
+            <dt>检测目标</dt>
+            <dd className="mono">{status.metrics_target}</dd>
+          </div>
+        )}
         <div>
           <dt>网络引擎</dt>
           <dd>

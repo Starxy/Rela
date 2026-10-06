@@ -1,7 +1,7 @@
 //! Rela 前端与 Rust 后端之间的业务模型。不包含网络参数或设备凭据。
 use serde::{Deserialize, Serialize};
 
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 pub const EASYTIER_TARGET_VERSION: &str = "2.7.0-0a783c8e";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -18,6 +18,7 @@ pub enum CoreState {
 #[serde(rename_all = "snake_case")]
 pub enum GatewayState {
     Unknown,
+    NotConfigured,
     Online,
     Offline,
 }
@@ -37,6 +38,7 @@ pub struct ConnectionStatus {
     pub gateway: GatewayState,
     pub latency_ms: Option<u32>,
     pub connection_type: Option<ConnectionType>,
+    pub metrics_target: Option<String>,
     pub resources_available: u32,
     pub resources_total: u32,
     pub last_error: Option<String>,
@@ -51,6 +53,7 @@ impl Default for ConnectionStatus {
             gateway: GatewayState::Unknown,
             latency_ms: None,
             connection_type: None,
+            metrics_target: None,
             resources_available: 0,
             resources_total: 0,
             last_error: Some("网络引擎尚未接入。".into()),

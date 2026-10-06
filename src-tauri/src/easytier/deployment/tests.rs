@@ -74,6 +74,11 @@ impl Service for ControlledService {
     fn snapshot(&mut self) -> Result<ServiceSnapshot, AppError> {
         Ok(self.state.clone())
     }
+    fn begin_change(&mut self) -> Result<(), AppError> {
+        self.state.description = Some("Rela network deployment pending".into());
+        self.state.security = Some("administrator-only".into());
+        self.fail("begin")
+    }
     fn stop(&mut self) -> Result<(), AppError> {
         self.fail("stop")?;
         self.state.was_running = false;
@@ -160,6 +165,9 @@ impl Fixture {
                 location: old_location,
                 was_running: old.is_some(),
                 description: old.as_ref().map(|old| old.public().description().unwrap()),
+                security: old
+                    .as_ref()
+                    .map(|_| "synthetic-controller-permissions".into()),
             },
             failure: None,
             starts: 0,
@@ -191,6 +199,10 @@ impl Fixture {
         assert_eq!(self.service.state.location, self.old_location);
         assert_eq!(self.service.state.was_running, self.old.is_some());
         if let Some(old) = &self.old {
+            assert_eq!(
+                self.service.state.security.as_deref(),
+                Some("synthetic-controller-permissions")
+            );
             old.assets
                 .verify(&self.old_location.unwrap().directory(&self.files.root))
                 .unwrap();
@@ -212,7 +224,11 @@ impl Fixture {
         assert!(self.service.state.was_running);
         assert_eq!(
             self.service.state.description,
-            Some(self.next.public().description().unwrap())
+            Some({
+                let mut approved = self.next.public();
+                approved.config_sha256 = Some(digest(&config("new-device")));
+                approved.description().unwrap()
+            })
         );
         assert!(!self.files.transaction().exists());
     }
@@ -287,7 +303,7 @@ fn restart_recovers_every_interruption_and_preserves_committed_update() {
 
 #[test]
 fn failures_from_service_operations_also_restore_previous_deployment() {
-    for operation in ["stop", "register", "start", "publish"] {
+    for operation in ["begin", "stop", "register", "start", "publish"] {
         let mut fixture = Fixture::new(Some(Location::Managed));
         fixture.service.failure = Some(operation);
         assert!(fixture.apply(|_| Ok(())).is_err());
@@ -313,6 +329,30 @@ fn failed_recovery_keeps_journal_and_can_be_retried() {
     assert!(fixture.files.journal_path().is_file());
     fixture.files.recover(&mut fixture.service, true).unwrap();
     fixture.unchanged();
+}
+
+#[test]
+fn committed_recovery_rejects_changed_config_before_republishing_approval() {
+    let mut fixture = Fixture::new(Some(Location::Managed));
+    assert!(catch_unwind(AssertUnwindSafe(|| fixture.apply(|step| {
+        if step == Step::Committed {
+            panic!("termination before cleanup");
+        }
+        Ok(())
+    })))
+    .is_err());
+    fs::write(fixture.files.config(), config("changed-after-commit")).unwrap();
+    fixture.service.state.description = None;
+    assert_eq!(
+        fixture
+            .files
+            .recover(&mut fixture.service, true)
+            .unwrap_err()
+            .code,
+        "core_integrity_failed"
+    );
+    assert!(fixture.service.state.description.is_none());
+    assert!(fixture.files.journal_path().exists());
 }
 
 #[test]

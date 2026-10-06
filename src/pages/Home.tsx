@@ -8,6 +8,14 @@ import {
 } from 'lucide-react';
 import type { ConnectionStatus, ResourceSyncStatus } from '../types';
 import { coreIsActive } from '../types';
+import {
+  connectionLabel,
+  connectionTypeLabel,
+  gatewayLabel,
+  latencyLabel,
+  latencyPlaceholder,
+  metricsDescription,
+} from '../connection-status';
 
 interface Props {
   status: ConnectionStatus | null;
@@ -33,27 +41,19 @@ export function Home({
   const connected = status?.connected ?? false;
   const active = coreIsActive(status);
   const pending = busy === 'connection';
+  const connecting =
+    !error && active && !connected && status?.core !== 'stopping';
   const unavailable =
     !active && (!sync?.configuration_ready || !sync.has_credential);
   const label = pending
     ? active
       ? '正在断开'
       : '正在连接'
-    : error
-      ? '状态未知'
-      : !status
-        ? '正在加载'
-        : status.core === 'stopping'
-          ? '正在断开'
-          : connected
-            ? '已连接'
-            : active
-              ? '连接未就绪'
-              : !sync?.configuration_ready
-                ? '等待获取网络配置'
-                : !sync.has_credential
-                  ? '请填写连接凭据'
-                  : '未连接';
+    : !error && status?.core === 'stopped' && !sync?.configuration_ready
+      ? '等待获取网络配置'
+      : !error && status?.core === 'stopped' && !sync?.has_credential
+        ? '请填写连接凭据'
+        : connectionLabel(status, error);
 
   return (
     <main className="home">
@@ -63,18 +63,18 @@ export function Home({
       >
         <div className="power-ring">
           <button
-            className={`power-switch ${pending ? 'is-pending' : ''}`}
+            className={`power-switch ${pending || connecting ? 'is-pending' : ''}`}
             role="switch"
             aria-checked={active}
             aria-label="实验室连接"
-            aria-busy={pending}
+            aria-busy={pending || connecting}
             title={active ? '断开连接' : '连接'}
             disabled={
               !!busy || !status || status.core === 'stopping' || unavailable
             }
             onClick={onConnect}
           >
-            {pending ? (
+            {pending || connecting ? (
               <LoaderCircle
                 className="spin"
                 size={38}
@@ -90,42 +90,41 @@ export function Home({
           <i aria-hidden="true" />
           {label}
         </h2>
-        <div className="connection-address">
-          {connected && status?.virtual_ip ? status.virtual_ip : null}
+        <div
+          className={`connection-address ${connected ? '' : 'connection-hint'}`}
+        >
+          {connected
+            ? status?.virtual_ip
+            : error ||
+              (active || status?.core === 'unavailable'
+                ? status?.last_error
+                : null)}
         </div>
       </section>
       <dl className="metrics" aria-label="网络状态">
         <div>
           <dt>校园网关</dt>
           <dd className={status?.gateway === 'online' ? 'positive' : ''}>
-            {status?.gateway === 'online'
-              ? '正常'
-              : status?.gateway === 'offline'
-                ? '不可达'
-                : '—'}
+            {gatewayLabel(status)}
           </dd>
         </div>
         <div>
-          <dt>延迟</dt>
-          <dd>
+          <dt>{latencyLabel(status)}</dt>
+          <dd title={metricsDescription(status)}>
             {status?.latency_ms != null ? (
               <>
                 {status.latency_ms}
                 <span className="unit"> ms</span>
               </>
             ) : (
-              '—'
+              latencyPlaceholder(status)
             )}
           </dd>
         </div>
         <div>
           <dt>连接方式</dt>
-          <dd>
-            {status?.connection_type === 'direct'
-              ? '直连'
-              : status?.connection_type === 'relay'
-                ? '中继'
-                : '—'}
+          <dd title={metricsDescription(status)}>
+            {connectionTypeLabel(status)}
           </dd>
         </div>
       </dl>

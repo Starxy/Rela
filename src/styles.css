@@ -197,6 +197,17 @@ dd {
     monospace;
   letter-spacing: 0.1px;
 }
+.connection-hint {
+  max-width: 300px;
+  height: auto;
+  min-height: 22px;
+  font:
+    12px/18px 'Segoe UI',
+    'Microsoft YaHei',
+    sans-serif;
+  letter-spacing: 0;
+  text-align: center;
+}
 .metrics {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

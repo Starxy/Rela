@@ -75,6 +75,8 @@ pub struct RouteRow {
     pub ipv4: String,
     pub proxy_cidrs: String,
     pub path_len: i32,
+    #[serde(default)]
+    pub next_hop_lat: Option<f64>,
 }
 
 pub fn parse_ipv4(value: &str) -> Option<Ipv4Addr> {
@@ -111,8 +113,8 @@ pub fn connection_snapshot(
     }
 }
 
-pub fn gateway_connection_type(routes: &[RouteRow], gateway: Ipv4Addr) -> Option<ConnectionType> {
-    let route = routes
+pub fn gateway_route(routes: &[RouteRow], gateway: Ipv4Addr) -> Option<&RouteRow> {
+    routes
         .iter()
         .filter(|route| route.path_len > 0)
         .find(|route| parse_ipv4(&route.ipv4) == Some(gateway))
@@ -126,12 +128,43 @@ pub fn gateway_connection_type(routes: &[RouteRow], gateway: Ipv4Addr) -> Option
                         .split(',')
                         .any(|cidr| contains_ip(cidr.trim(), gateway))
                 })
-        })?;
-    Some(if route.path_len == 1 {
-        ConnectionType::Direct
-    } else {
-        ConnectionType::Relay
-    })
+        })
+}
+
+/// Without a configured gateway, describe one reachable remote network node.
+/// Prefer a direct route, then the lowest measured latency and a stable IP order.
+pub fn network_route(routes: &[RouteRow]) -> Option<&RouteRow> {
+    routes
+        .iter()
+        .filter(|route| route.path_len > 0 && parse_ipv4(&route.ipv4).is_some())
+        .min_by_key(|route| {
+            (
+                route.path_len,
+                route.latency_ms().unwrap_or(u32::MAX),
+                parse_ipv4(&route.ipv4),
+            )
+        })
+}
+
+impl RouteRow {
+    pub fn connection_type(&self) -> ConnectionType {
+        if self.path_len == 1 {
+            ConnectionType::Direct
+        } else {
+            ConnectionType::Relay
+        }
+    }
+
+    pub fn latency_ms(&self) -> Option<u32> {
+        if self.path_len != 1 {
+            return None;
+        }
+        // CLI path_latency is a routing cost, not a measured end-to-end RTT.
+        let value = self.next_hop_lat?;
+        // The pinned CLI substitutes 0 when it has no latency sample yet.
+        (value.is_finite() && value > 0.0 && value <= f64::from(u32::MAX))
+            .then_some(value.round() as u32)
+    }
 }
 
 fn contains_ip(cidr: &str, target: Ipv4Addr) -> bool {
@@ -210,11 +243,53 @@ mod tests {
             ipv4: "10.1.2.1".into(),
             proxy_cidrs: "10.20.0.0/16".into(),
             path_len: 2,
+            next_hop_lat: Some(5.0),
         }];
         assert!(matches!(
-            gateway_connection_type(&rows, "10.20.1.1".parse().unwrap()),
+            gateway_route(&rows, "10.20.1.1".parse().unwrap()).map(RouteRow::connection_type),
             Some(ConnectionType::Relay)
         ));
-        assert!(gateway_connection_type(&rows, "192.168.1.1".parse().unwrap()).is_none());
+        assert!(gateway_route(&rows, "192.168.1.1".parse().unwrap()).is_none());
+    }
+
+    #[test]
+    fn no_gateway_metrics_use_remote_route_and_ignore_local_row() {
+        // Shape emitted by the pinned 2.7 CLI's route --output json.
+        let rows: Vec<RouteRow> = serde_json::from_str(
+            r#"[
+                {"ipv4":"192.168.200.23/24","proxy_cidrs":"","path_len":0,"next_hop_lat":0.0,"path_latency":0},
+                {"ipv4":"192.168.200.100/24","proxy_cidrs":"","path_len":2,"next_hop_lat":12.4,"path_latency":48},
+                {"ipv4":"192.168.200.1/24","proxy_cidrs":"","path_len":1,"next_hop_lat":12.4,"path_latency":12}
+            ]"#,
+        )
+        .unwrap();
+        let route = network_route(&rows).unwrap();
+        assert_eq!(
+            parse_ipv4(&route.ipv4).unwrap().to_string(),
+            "192.168.200.1"
+        );
+        assert_eq!(route.latency_ms(), Some(12));
+        assert!(matches!(route.connection_type(), ConnectionType::Direct));
+        assert_eq!(rows[1].latency_ms(), None);
+        assert!(matches!(rows[1].connection_type(), ConnectionType::Relay));
+        assert!(network_route(&rows[..1]).is_none());
+    }
+
+    #[test]
+    fn route_latency_does_not_invent_missing_or_invalid_measurements() {
+        for latency in [None, Some(-1.0), Some(f64::NAN), Some(f64::INFINITY)] {
+            let route = RouteRow {
+                ipv4: "10.1.2.1/24".into(),
+                proxy_cidrs: String::new(),
+                path_len: 1,
+                next_hop_lat: latency,
+            };
+            assert_eq!(route.latency_ms(), None);
+        }
+        let route: RouteRow = serde_json::from_str(
+            r#"{"ipv4":"10.1.2.1/24","proxy_cidrs":"","path_len":1,"next_hop_lat":0.0}"#,
+        )
+        .unwrap();
+        assert_eq!(route.latency_ms(), None);
     }
 }

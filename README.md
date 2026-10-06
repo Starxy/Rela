@@ -9,7 +9,7 @@
 - 从有效缓存显示 SSH、Web、NAS 资源；连接后进行 TCP 探测，未连接时显示“未检测”。首份 Spark 仅为占位。
 - 独立检查软件稳定/测试渠道，验证清单签名、架构和版本，保留可信缓存；发现新版后提醒手动更新，点击打开对应 GitHub Release 页面。
 - 设置界面可修改网络名称、credential 凭据、连接节点和两个开关，支持更换/清除凭据、恢复默认和保存后重连。
-- 使用专用 `RelaEasyTier` 服务连接、断开和重连。GUI 保持普通权限，服务变更由同一程序的一次性提权入口执行。目前每次连接控制都需要 UAC 授权。
+- 使用专用 `RelaEasyTier` 服务连接、断开和重连。GUI 保持普通权限；首次部署、引擎或运行配置变化时请求 UAC，授权后同一 Windows 用户的日常启停无需重复弹窗。
 - 通过官方 CLI 查询本机 RPC，并核对虚拟网卡地址。只有 Core、节点连接和 TUN 都就绪才显示已连接。
 - 可选校园网关 IPv4 检测、实时诊断和不含密钥的摘要导出。
 - credential 使用当前 Windows 用户的 DPAPI 加密保存；运行时通过管理员受保护的 TOML 交给 Core，启用 Secure Mode，不传入网络主密码或 `peer_public_key`。已保存凭据不回显至前端，也不进入进程/服务启动参数。
@@ -65,7 +65,7 @@ npm run desktop:portable
 
 同目录的 `portable.txt` 启用便携模式：设置存入 `data/config`、诊断存入 `data/logs`、WebView2 缓存存入 `data/webview`。移动前退出所有 Rela 界面。已保存凭据绑定当前 Windows 用户，换电脑或用户后须恢复默认并重新导入凭据。
 
-Portable 省去界面安装步骤，首次连接仍需 UAC 授权并创建 `RelaEasyTier` 服务及 `%ProgramData%/Rela`。该服务与安装版共享，退出界面仍保持连接。移除前退出所有 Rela，以管理员身份运行包内 `Remove-Network-Service.cmd`，输入 `REMOVE` 后清理服务及其数据，再删除解压目录。共享网络驱动、系统 WebView2 和安装版用户配置会保留。
+Portable 省去界面安装步骤，首次连接仍需 UAC 授权并创建 `RelaEasyTier` 服务及 `%ProgramData%/Rela`。同一 Windows 用户随后连接、断开和重连可直接启停已确认的服务；更换引擎、网络参数、credential 或设备名称时重新授权。该服务与安装版共享，退出界面仍保持连接。移除前退出所有 Rela，以管理员身份运行包内 `Remove-Network-Service.cmd`，输入 `REMOVE` 后清理服务及其数据，再删除解压目录。共享网络驱动、系统 WebView2 和安装版用户配置会保留。
 
 仅重新打包已编译程序可运行 `npm run package:portable`；`-- --debug` 用于 CI 的 debug 包。发行前应使用完整 `desktop:portable` 构建，保证程序、前端和引擎资产一致。打包使用全新临时目录和固定文件清单，不包含用户 `data` 或构建配置源文件。
 
@@ -100,7 +100,7 @@ CI 使用不带真实密钥的 debug 构建，不连接实验室网络。生产�
 | 服务程序、Core 配置 | `%ProgramData%/Rela/`，限制为系统和管理员访问                               |
 | 诊断摘要            | Tauri 应用日志目录，导出后显示完整路径                                      |
 
-修改配置后，下次连接或“保存并重连”生效。网关地址可留空；未配置时网关和延迟显示未知。未提供资源清单时桌面端返回空列表。
+修改配置后，下次连接或“保存并重连”生效。网关地址可留空；未配置时网关显示“未设置”，仍读取远端节点的延迟与实际路由，并标明检测目标。未提供资源清单时桌面端返回空列表。
 
 ## 目录
 

@@ -57,6 +57,9 @@ describe('浏览器演示状态', () => {
     ).toBe(true);
     const connected = await service.connect();
     expect(connected.core).toBe('running');
+    expect(connected.gateway).toBe('not_configured');
+    expect(connected.metrics_target).toBeTruthy();
+    expect(connected.latency_ms).not.toBeNull();
     const resources = await service.getResources();
     expect(connected.virtual_ip).toBeTruthy();
     expect(connected.resources_available).toBe(
@@ -74,6 +77,7 @@ describe('浏览器演示状态', () => {
       core: 'stopped',
       virtual_ip: null,
       connection_type: null,
+      metrics_target: null,
       latency_ms: null,
       gateway: 'unknown',
     });

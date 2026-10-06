@@ -1,6 +1,6 @@
 # Rela 本地接口协议
 
-Tauri 业务接口版本 `9`；JSON 字段使用 `snake_case`。Rust 定义位于 `crates/rela-protocol/src/lib.rs`，前端镜像位于 `src/types.ts`。此版本独立于 EasyTier RPC 协议。
+Tauri 业务接口版本 `10`；JSON 字段使用 `snake_case`。Rust 定义位于 `crates/rela-protocol/src/lib.rs`，前端镜像位于 `src/types.ts`。此版本独立于 EasyTier RPC 协议。
 
 ## Frontend → Native
 
@@ -62,6 +62,7 @@ Update 使用相同配置字段，但把 `has_credential` 换成可选 `credenti
   "gateway": "unknown",
   "latency_ms": null,
   "connection_type": null,
+  "metrics_target": null,
   "resources_available": 0,
   "resources_total": 0,
   "last_error": null
@@ -69,8 +70,10 @@ Update 使用相同配置字段，但把 `has_credential` 换成可选 `credenti
 ```
 
 - `core`: `unavailable | stopped | starting | stopping | running`。
-- `gateway`: `unknown | online | offline`。
-- `connection_type`: `direct | relay | null`，根据目标网关路由判断。
+- `gateway`: `unknown | not_configured | online | offline`；已连接但未设置网关时为 `not_configured`。
+- `connection_type`: `direct | relay | null`，根据检测目标的实际路由判断，不根据“禁用 P2P”设置推断。
+- `metrics_target`: 检测目标 IPv4 或 null。设置网关时，延迟为该网关的 ICMP 往返时间，连接方式为该网关的路由；未设置时，选择远端网络节点（优先较少跳数，其次较低延迟和 IP 排序），直连延迟取 CLI 路由中的非零 `next_hop_lat`（零也可能表示尚无样本），中继或缺少直连测量时探测该节点的 ICMP 往返时间。`path_latency` 是路由代价，不能作为实际延迟。跳数为 0 的本机路由不参与检测。
+- 首页与连接详情将运行中但尚未建立网络的状态显示为“正在连接”，并展示 `last_error` 中的具体等待原因；等待期间仍可断开。
 - 服务运行不等于已连接；已连接不等于实验室网关或资源可达。
 - 无数据使用 null / unknown，不用示例数据代替。状态读取错误会清除界面上的旧连接状态。
 

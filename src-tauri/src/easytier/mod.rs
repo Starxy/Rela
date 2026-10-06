@@ -1,5 +1,7 @@
 //! Rela 直接控制专用的 EasyTier Core Windows 服务，并通过官方 CLI 读取本机 RPC。
+mod control;
 mod deployment;
+pub(crate) mod helper;
 mod managed_service;
 mod process;
 mod status;
@@ -170,8 +172,10 @@ impl EasyTierCore {
                 config: snapshot.as_ref().map(|snapshot| snapshot.config.clone()),
                 device_name,
             };
-            let applied = if platform::is_elevated() {
-                perform_helper(request, &this.binaries)?
+            let applied = if let Some(applied) = control::try_control(&request, &this.binaries)? {
+                applied
+            } else if platform::is_elevated() {
+                perform_helper(request, &this.binaries, &platform::current_user_sid()?)?
             } else {
                 fs::create_dir_all(&this.requests).map_err(|_| platform::storage_error())?;
                 let stamp = SystemTime::now()
@@ -314,19 +318,34 @@ impl EasyTierCore {
         let tun_ready = ip.is_some_and(|ip| platform::tun_has_ip(network_config::TUN_NAME, ip));
         result = status::connection_snapshot(&node, &connectors, tun_ready);
         if result.connected {
+            // Route metrics remain available when optional ICMP gateway checks are disabled.
+            let routes = self.rpc::<Vec<status::RouteRow>>("route").ok();
             if let Some(gateway) = self
                 .configuration_store
                 .running_gateway()?
-                .and_then(|ip| ip.parse().ok())
+                .and_then(|ip| ip.parse::<std::net::Ipv4Addr>().ok())
             {
+                result.metrics_target = Some(gateway.to_string());
                 result.latency_ms = platform::ping(gateway);
                 result.gateway = if result.latency_ms.is_some() {
                     rela_protocol::GatewayState::Online
                 } else {
                     rela_protocol::GatewayState::Offline
                 };
-                if let Ok(routes) = self.rpc::<Vec<status::RouteRow>>("route") {
-                    result.connection_type = status::gateway_connection_type(&routes, gateway);
+                if let Some(route) = routes
+                    .as_deref()
+                    .and_then(|routes| status::gateway_route(routes, gateway))
+                {
+                    result.connection_type = Some(route.connection_type());
+                }
+            } else {
+                result.gateway = rela_protocol::GatewayState::NotConfigured;
+                if let Some(route) = routes.as_deref().and_then(status::network_route) {
+                    if let Some(target) = status::parse_ipv4(&route.ipv4) {
+                        result.metrics_target = Some(target.to_string());
+                        result.latency_ms = route.latency_ms().or_else(|| platform::ping(target));
+                    }
+                    result.connection_type = Some(route.connection_type());
                 }
             }
         }
@@ -381,7 +400,11 @@ fn asset_manifest() -> Result<AssetManifest, AppError> {
     Ok(manifest)
 }
 
-fn perform_helper(mut request: HelperRequest, bundled: &Path) -> Result<bool, AppError> {
+fn perform_helper(
+    mut request: HelperRequest,
+    bundled: &Path,
+    controller: &str,
+) -> Result<bool, AppError> {
     if !platform::is_elevated() {
         return Err(AppError::new("permission_required", "此操作需要系统授权。"));
     }
@@ -393,7 +416,7 @@ fn perform_helper(mut request: HelperRequest, bundled: &Path) -> Result<bool, Ap
     let root = platform::service_directory()?;
     platform::secure_service_directory(&root)?;
     let _control_lock = platform::lock_service_control(&root)?;
-    let mut service = managed_service::ManagedService::new(root.clone());
+    let mut service = managed_service::ManagedService::new(root.clone(), bundled.to_path_buf());
     let files = deployment::Files::new(
         root,
         platform::secure_service_directory,
@@ -413,16 +436,16 @@ fn perform_helper(mut request: HelperRequest, bundled: &Path) -> Result<bool, Ap
         .normalize_and_validate(true)?;
     verify_assets(bundled)?;
     files.recover(&mut service, true)?;
-    if matches!(request.action, CoreAction::Connect)
-        && platform::service_state()? == ServiceState::Running
-    {
-        return Ok(false);
+    if let Some(applied) = control::try_control(&request, bundled)? {
+        platform::authorize_service_controller(Some(controller))?;
+        return Ok(applied);
     }
     let config = request
         .config
         .ok_or_else(internal_error)?
         .core_toml(&request.device_name)?;
     files.apply(bundled, config.as_bytes(), &mut service)?;
+    platform::authorize_service_controller(Some(controller))?;
     Ok(true)
 }
 
@@ -468,7 +491,8 @@ pub fn helper_entry() -> Option<i32> {
         if !metadata.is_file() || metadata.file_type().is_symlink() || metadata.len() > 64 * 1024 {
             return Err(internal_error());
         }
-        let bytes = platform::unprotect(&fs::read(request_path).map_err(|_| internal_error())?)?;
+        let controller = platform::file_owner_sid(&request_path)?;
+        let bytes = platform::unprotect(&fs::read(&request_path).map_err(|_| internal_error())?)?;
         let request: HelperRequest =
             serde_json::from_slice(&bytes).map_err(|_| internal_error())?;
         let executable = std::env::current_exe().map_err(|_| internal_error())?;
@@ -476,18 +500,7 @@ pub fn helper_entry() -> Option<i32> {
             .parent()
             .ok_or_else(internal_error)?
             .join("easytier");
-        perform_helper(request, &bundled)
+        perform_helper(request, &bundled, &controller)
     })();
-    Some(match result {
-        Ok(true) => 0,
-        Ok(false) => 10,
-        Err(error) if error.code == "core_integrity_failed" => 2,
-        Err(error) if error.code == "service_conflict" => 3,
-        Err(error) if error.code == "core_downgrade_blocked" => 4,
-        Err(error) if error.code == "core_recovery_required" => 5,
-        Err(error) if error.code == "core_update_rolled_back" => 6,
-        Err(error) if error.code == "credential_migration_required" => 7,
-        Err(error) if error.code == "core_version_unknown" => 8,
-        Err(_) => 1,
-    })
+    Some(helper::exit_code(result))
 }

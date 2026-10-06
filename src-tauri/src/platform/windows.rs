@@ -328,6 +328,192 @@ pub fn is_elevated() -> bool {
     unsafe { IsUserAnAdmin() != 0 }
 }
 
+fn sid_string(sid: *mut c_void) -> Result<String, AppError> {
+    use windows_sys::Win32::Security::Authorization::ConvertSidToStringSidW;
+    let mut value = null_mut();
+    if unsafe { ConvertSidToStringSidW(sid, &mut value) } == 0 {
+        return Err(storage_error());
+    }
+    let _allocation = LocalAllocation(value.cast());
+    Ok(unsafe { string_from_wide(value) })
+}
+
+pub fn file_owner_sid(path: &Path) -> Result<String, AppError> {
+    use windows_sys::Win32::Security::{
+        Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+        OWNER_SECURITY_INFORMATION,
+    };
+    let mut owner = null_mut();
+    let mut raw = null_mut();
+    if unsafe {
+        GetNamedSecurityInfoW(
+            wide(path).as_ptr(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION,
+            &mut owner,
+            null_mut(),
+            null_mut(),
+            null_mut(),
+            &mut raw,
+        )
+    } != 0
+    {
+        return Err(storage_error());
+    }
+    let _descriptor = LocalAllocation(raw);
+    sid_string(owner)
+}
+
+pub fn current_user_sid() -> Result<String, AppError> {
+    use windows_sys::Win32::{
+        Security::{GetTokenInformation, TokenUser, TOKEN_QUERY, TOKEN_USER},
+        System::Threading::{GetCurrentProcess, OpenProcessToken},
+    };
+    let mut raw = null_mut();
+    if unsafe { OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &mut raw) } == 0 {
+        return Err(storage_error());
+    }
+    let token = unsafe { OwnedHandle::from_raw_handle(raw) };
+    let mut needed = 0;
+    unsafe {
+        GetTokenInformation(token.as_raw_handle(), TokenUser, null_mut(), 0, &mut needed);
+    }
+    if needed == 0 || needed > 64 * 1024 {
+        return Err(storage_error());
+    }
+    let mut buffer = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
+    if unsafe {
+        GetTokenInformation(
+            token.as_raw_handle(),
+            TokenUser,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    } == 0
+    {
+        return Err(storage_error());
+    }
+    sid_string(unsafe { (*buffer.as_ptr().cast::<TOKEN_USER>()).User.Sid })
+}
+
+fn service_control_sddl(controller: Option<&str>) -> Result<String, AppError> {
+    // Users can read status/config metadata. Only the approved user can start/stop;
+    // changing the executable, service configuration, DACL or owner remains privileged.
+    let mut sddl = String::from("D:P(A;;0xF01FF;;;SY)(A;;0xF01FF;;;BA)(A;;0x20005;;;AU)");
+    if let Some(sid) = controller {
+        if !sid.starts_with("S-1-")
+            || sid.len() > 192
+            || !sid
+                .split('-')
+                .skip(1)
+                .all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()))
+        {
+            return Err(service_error());
+        }
+        sddl.push_str(&format!("(A;;0x20035;;;{sid})"));
+    }
+    Ok(sddl)
+}
+
+pub fn authorize_service_controller(controller: Option<&str>) -> Result<(), AppError> {
+    let result = service_control_sddl(controller).and_then(|sddl| set_service_security(&sddl));
+    result.map_err(|_| {
+        AppError::new(
+            "service_permissions_failed",
+            "网络服务启停权限设置失败，请重新连接以完成系统授权。",
+        )
+    })
+}
+
+pub fn service_control_allowed(start: bool, stop: bool) -> Result<bool, AppError> {
+    let manager = unsafe { OpenSCManagerW(null(), null(), SC_MANAGER_CONNECT) };
+    if manager.is_null() {
+        return Err(service_error());
+    }
+    let manager = ServiceHandle(manager);
+    let access = SERVICE_QUERY_STATUS
+        | if start { SERVICE_START } else { 0 }
+        | if stop { SERVICE_STOP } else { 0 };
+    let service = unsafe { OpenServiceW(manager.0, wide(SERVICE_NAME).as_ptr(), access) };
+    if service.is_null() {
+        return match unsafe { GetLastError() } {
+            windows_sys::Win32::Foundation::ERROR_ACCESS_DENIED | ERROR_SERVICE_DOES_NOT_EXIST => {
+                Ok(false)
+            }
+            _ => Err(service_error()),
+        };
+    }
+    let _service = ServiceHandle(service);
+    Ok(true)
+}
+
+pub fn service_security() -> Result<Option<String>, AppError> {
+    use windows_sys::Win32::Security::Authorization::ConvertSecurityDescriptorToStringSecurityDescriptorW;
+    let Some(service) = service_handle(0x00020000)? else {
+        return Ok(None);
+    };
+    let mut needed = 0;
+    unsafe {
+        QueryServiceObjectSecurity(
+            service.0,
+            DACL_SECURITY_INFORMATION,
+            null_mut(),
+            0,
+            &mut needed,
+        );
+    }
+    if needed == 0 || needed > 16 * 1024 {
+        return Err(service_error());
+    }
+    let mut buffer = vec![0usize; (needed as usize).div_ceil(size_of::<usize>())];
+    if unsafe {
+        QueryServiceObjectSecurity(
+            service.0,
+            DACL_SECURITY_INFORMATION,
+            buffer.as_mut_ptr().cast(),
+            needed,
+            &mut needed,
+        )
+    } == 0
+    {
+        return Err(service_error());
+    }
+    let mut raw = null_mut();
+    if unsafe {
+        ConvertSecurityDescriptorToStringSecurityDescriptorW(
+            buffer.as_mut_ptr().cast(),
+            1,
+            DACL_SECURITY_INFORMATION,
+            &mut raw,
+            null_mut(),
+        )
+    } == 0
+    {
+        return Err(service_error());
+    }
+    let _allocation = LocalAllocation(raw.cast());
+    let value = unsafe { string_from_wide(raw) };
+    if value.len() > 4096 {
+        return Err(service_error());
+    }
+    Ok(Some(value))
+}
+
+pub fn set_service_security(sddl: &str) -> Result<(), AppError> {
+    if sddl.len() > 4096 || sddl.contains('\0') {
+        return Err(service_error());
+    }
+    let desc = descriptor(sddl)?;
+    let Some(service) = service_handle(0x00040000)? else {
+        return Ok(());
+    };
+    if unsafe { SetServiceObjectSecurity(service.0, DACL_SECURITY_INFORMATION, desc.0) } == 0 {
+        return Err(service_error());
+    }
+    Ok(())
+}
+
 pub fn lock_service_control(directory: &Path) -> Result<fs::File, AppError> {
     fs::OpenOptions::new()
         .read(true)
@@ -589,42 +775,7 @@ pub fn elevate_helper(request: &Path) -> Result<bool, AppError> {
     if unsafe { GetExitCodeProcess(process.0.as_raw_handle(), &mut code) } == 0 {
         return Err(service_error());
     }
-    match code {
-        0 => Ok(true),
-        10 => Ok(false),
-        2 => Err(AppError::new(
-            "core_integrity_failed",
-            "网络引擎文件校验失败，请重新安装 Rela。",
-        )),
-        3 => Err(AppError::new(
-            "service_conflict",
-            "网络服务或管理端口被占用，请先关闭冲突的客户端。",
-        )),
-        4 => Err(AppError::new(
-            "core_downgrade_blocked",
-            "此 Rela 副本较旧，请使用部署当前引擎的较新版本。",
-        )),
-        5 => Err(AppError::new(
-            "core_recovery_required",
-            "网络引擎切换尚未恢复。已保留备份，请重试或联系管理员，勿删除服务数据。",
-        )),
-        6 => Err(AppError::new(
-            "core_update_rolled_back",
-            "网络引擎更新未完成，已恢复更新前的引擎和配置。",
-        )),
-        7 => Err(AppError::new(
-            "credential_migration_required",
-            "已保留旧引擎和配置，但未恢复旧密码连接。请填写 credential 后重新连接。",
-        )),
-        8 => Err(AppError::new(
-            "core_version_unknown",
-            "现有引擎版本无法验证，请使用较新的 Rela 或联系管理员恢复。",
-        )),
-        _ => Err(AppError::new(
-            "service_action_failed",
-            "网络引擎服务操作失败，请检查系统权限并重试。",
-        )),
-    }
+    crate::easytier::helper::decode_exit(code)
 }
 
 pub struct ElevatedProcess(OwnedHandle);
@@ -864,6 +1015,63 @@ pub fn ping(ip: Ipv4Addr) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn service_controller_permissions_grant_only_start_stop_and_queries_to_the_approved_user() {
+        use windows_sys::Win32::Security::{GetAce, GetSecurityDescriptorDacl, ACCESS_ALLOWED_ACE};
+        let user = "S-1-5-21-1-2-3-1001";
+        for controller in [None, Some(user)] {
+            let desc = descriptor(&service_control_sddl(controller).unwrap()).unwrap();
+            let mut present = 0;
+            let mut defaulted = 0;
+            let mut dacl = null_mut();
+            assert_ne!(
+                unsafe {
+                    GetSecurityDescriptorDacl(desc.0, &mut present, &mut dacl, &mut defaulted)
+                },
+                0
+            );
+            assert_ne!(present, 0);
+            let mut approved = None;
+            for index in 0..unsafe { (*dacl).AceCount } {
+                let mut raw = null_mut();
+                assert_ne!(unsafe { GetAce(dacl, index.into(), &mut raw) }, 0);
+                let ace = unsafe { &*raw.cast::<ACCESS_ALLOWED_ACE>() };
+                let sid = sid_string((&ace.SidStart as *const u32).cast_mut().cast()).unwrap();
+                if sid == user {
+                    approved = Some(ace.Mask);
+                }
+                if sid == "S-1-5-11" {
+                    assert_eq!(ace.Mask, 0x20005);
+                }
+            }
+            assert_eq!(approved, controller.map(|_| 0x20035));
+            if let Some(mask) = approved {
+                assert_eq!(
+                    mask & (SERVICE_CHANGE_CONFIG | 0x00010000 | 0x00040000 | 0x00080000),
+                    0
+                );
+            }
+        }
+        assert!(service_control_sddl(Some("S-1-5-21-1)(A;;GA;;;WD)")).is_err());
+    }
+
+    #[test]
+    fn helper_authorization_uses_the_request_owner_instead_of_the_elevated_account() {
+        let path = std::env::temp_dir().join(format!(
+            "rela-request-owner-{}-{}.bin",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::write(&path, b"synthetic-encrypted-request").unwrap();
+        private_file(&path).unwrap();
+        if !is_elevated() {
+            assert_eq!(file_owner_sid(&path).unwrap(), current_user_sid().unwrap());
+        }
+        fs::remove_file(path).unwrap();
+    }
     #[test]
     fn dpapi_roundtrip_hides_plaintext_and_detects_corruption() {
         let plain = b"rela-test-secret";

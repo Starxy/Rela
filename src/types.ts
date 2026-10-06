@@ -3,9 +3,10 @@ export interface ConnectionStatus {
   connected: boolean;
   core: 'unavailable' | 'stopped' | 'starting' | 'stopping' | 'running';
   virtual_ip: string | null;
-  gateway: 'unknown' | 'online' | 'offline';
+  gateway: 'unknown' | 'not_configured' | 'online' | 'offline';
   latency_ms: number | null;
   connection_type: 'direct' | 'relay' | null;
+  metrics_target: string | null;
   resources_available: number;
   resources_total: number;
   last_error: string | null;

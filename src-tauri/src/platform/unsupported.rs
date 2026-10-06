@@ -34,6 +34,24 @@ pub fn secure_service_file(_: &Path) -> Result<(), AppError> {
 pub fn is_elevated() -> bool {
     false
 }
+pub fn current_user_sid() -> Result<String, AppError> {
+    Err(unsupported())
+}
+pub fn file_owner_sid(_: &Path) -> Result<String, AppError> {
+    Err(unsupported())
+}
+pub fn authorize_service_controller(_: Option<&str>) -> Result<(), AppError> {
+    Err(unsupported())
+}
+pub fn service_control_allowed(_: bool, _: bool) -> Result<bool, AppError> {
+    Err(unsupported())
+}
+pub fn service_security() -> Result<Option<String>, AppError> {
+    Err(unsupported())
+}
+pub fn set_service_security(_: &str) -> Result<(), AppError> {
+    Err(unsupported())
+}
 pub fn lock_service_control(_: &Path) -> Result<std::fs::File, AppError> {
     Err(unsupported())
 }

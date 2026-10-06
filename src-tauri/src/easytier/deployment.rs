@@ -68,6 +68,7 @@ impl Deployment {
             core_version: self.assets.version.clone(),
             owner_app_version: self.owner_app_version.clone(),
             engine_revision: self.assets.engine_revision,
+            config_sha256: None,
         }
     }
 }
@@ -78,6 +79,8 @@ pub(super) struct PublicDeployment {
     pub core_version: String,
     pub owner_app_version: Version,
     pub engine_revision: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub config_sha256: Option<String>,
 }
 impl PublicDeployment {
     pub fn from_description(description: &str) -> Option<Self> {
@@ -90,6 +93,10 @@ impl PublicDeployment {
             || !result.owner_app_version.build.is_empty()
             || result.engine_revision == 0
             || result.engine_revision > rela_manifests::MAX_REVISION
+            || result
+                .config_sha256
+                .as_ref()
+                .is_some_and(|hash| validate_digest(hash).is_err())
         {
             return None;
         }
@@ -109,10 +116,13 @@ pub(super) struct ServiceSnapshot {
     pub location: Option<Location>,
     pub was_running: bool,
     pub description: Option<String>,
+    #[serde(default)]
+    pub security: Option<String>,
 }
 
 pub(super) trait Service {
     fn snapshot(&mut self) -> Result<ServiceSnapshot, AppError>;
+    fn begin_change(&mut self) -> Result<(), AppError>;
     fn stop(&mut self) -> Result<(), AppError>;
     fn register(&mut self, location: Location) -> Result<(), AppError>;
     fn start_and_verify(&mut self, version: &str) -> Result<(), AppError>;
@@ -143,6 +153,14 @@ struct Journal {
     next_config_sha256: Option<String>,
     #[serde(default)]
     old_config_sha256: Option<String>,
+}
+
+impl Journal {
+    fn public(&self) -> PublicDeployment {
+        let mut result = self.next.public();
+        result.config_sha256 = self.next_config_sha256.clone();
+        result
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -213,7 +231,12 @@ impl Files {
         };
         if journal.phase == Phase::Committed {
             self.verify_live(&journal.next)?;
-            service.publish(&journal.next.public())?;
+            if let Some(expected) = &journal.next_config_sha256 {
+                if digest(&read(&self.config(), 64 * 1024)?) != *expected {
+                    return Err(integrity_error());
+                }
+            }
+            service.publish(&journal.public())?;
             return self.cleanup();
         }
         self.rollback(&journal, service, restore_running)
@@ -278,6 +301,11 @@ impl Files {
             || journal
                 .previous_service
                 .description
+                .as_ref()
+                .is_some_and(|value| value.len() > 4096)
+            || journal
+                .previous_service
+                .security
                 .as_ref()
                 .is_some_and(|value| value.len() > 4096)
         {
@@ -439,6 +467,7 @@ impl Files {
         self.write_journal(&journal)?;
         let result = (|| {
             observer(Step::Prepared)?;
+            service.begin_change()?;
             service.stop()?;
             observer(Step::Stopped)?;
             if let Some(location) = journal.old_location {
@@ -461,7 +490,7 @@ impl Files {
             observer(Step::Registered)?;
             service.start_and_verify(&journal.next.assets.version)?;
             observer(Step::Started)?;
-            service.publish(&journal.next.public())?;
+            service.publish(&journal.public())?;
             observer(Step::Published)?;
             journal.phase = Phase::Committed;
             if let Err(error) = self.write_journal(&journal) {
@@ -477,14 +506,7 @@ impl Files {
                 return Err(error);
             }
             self.rollback(&journal, service, true)?;
-            return Err(AppError::new(
-                "core_update_rolled_back",
-                if error.code == "service_conflict" {
-                    "网络服务或管理端口冲突，已恢复更新前的引擎和配置。"
-                } else {
-                    "网络引擎更新未完成，已恢复更新前的引擎和配置。"
-                },
-            ));
+            return Err(super::helper::rolled_back(&error.code));
         }
         // A committed journal is kept if cleanup fails; next operation safely retries cleanup.
         self.cleanup()
