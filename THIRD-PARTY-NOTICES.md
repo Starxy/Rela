@@ -16,13 +16,13 @@ Project: https://www.wintun.net/
 
 The signed DLL is supplied by the official EasyTier release. The Wintun binary license from the official 0.14.1 archive is included as third-party-licenses/Wintun-LICENSE.txt. The binary license differs from the source code license.
 
-## WinDivert 2.2
+## WinDivert 2.2.2
 
 Copyright © Basil 2011–2022.
 
-Project and source: https://github.com/basil00/WinDivert
+Project and source: https://github.com/basil00/WinDivert/tree/v2.2.2
 
-License text is included as third-party-licenses/WinDivert-LICENSE.txt. The exact driver is the unmodified WinDivert64.sys from the pinned EasyTier archive.
+License text is included as third-party-licenses/WinDivert-LICENSE.txt. The exact driver is the unmodified WinDivert64.sys from the pinned EasyTier archive; its SHA-256 matches the x64 driver in the official WinDivert-2.2.2-A.zip. Corresponding source is available at https://github.com/basil00/WinDivert/archive/refs/tags/v2.2.2.tar.gz . EasyTier and WinDivert source archives accompany the Rela 0.1.0 Release assets.
 
 ## Packet.dll / Npcap 1.79 — distribution scope
 
