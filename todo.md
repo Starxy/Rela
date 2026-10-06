@@ -18,7 +18,8 @@
 - 服务注册参数已按固定 Core 的 CLI 修正；首次部署或运行配置变化请求 UAC，同一用户的常规启停复用已授权配置。权限与真实连接仍待实机复验。
 - 首页连接等待原因已展示；未设置可选网关时独立读取节点延迟与实际路由，并标明检测目标。状态与隔离 Core 测试通过，新包真实网络显示仍待复验。
 - 2026-10-06 本地复核通过：28 项前端测试、66 项 Rust 测试、10 项发布工具测试，以及格式、Clippy、类型检查和前端生产构建。上述检查不替代独立 Windows 系统验收。
-- 历史远程 [CI（2ec29ee）](https://github.com/Starxy/Rela/actions/runs/36684831280) 的安装包失败原因已修复：去除 NSIS 内部文件名白名单，保留必要资源与内容检查。本地 7-Zip 24.09 和 26.03 的两包校验均通过；远程验证以当前提交的 [CI 结果](https://github.com/Starxy/Rela/actions/workflows/ci.yml)为准。2026-10-06 查询仓库尚无 Release，tag 发布工作流仍待建立。
+- 历史远程 [CI（2ec29ee）](https://github.com/Starxy/Rela/actions/runs/36684831280) 的安装包失败原因已修复：去除 NSIS 内部文件名白名单，保留必要资源与内容检查。本地 7-Zip 24.09 和 26.03 的两包校验均通过；修复后的 [CI（b3f32c7）](https://github.com/Starxy/Rela/actions/runs/37414421204) 和 [README 更新 CI（e749420）](https://github.com/Starxy/Rela/actions/runs/37417061437) 均通过。后续提交以 [CI 结果](https://github.com/Starxy/Rela/actions/workflows/ci.yml)为准。
+- 2026-10-06 已重写面向使用者的 README 和绿色版说明，创建 Rela 0.1.0 测试版 Release 草稿；安装包、绿色版 ZIP、SHA-256 与 EasyTier/WinDivert 对应源码均已上传，远程摘要与本地一致。当前 release 两包完整性、敏感内容与共享资源检查通过。公开下载等待确认 Npcap 授权是否覆盖公开分发；tag 自动发布工作流、软件签名清单和独立实机验收仍未完成。
 
 ## 推进规则
 
