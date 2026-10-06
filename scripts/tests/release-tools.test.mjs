@@ -12,6 +12,7 @@ import {
   readNeedles,
 } from '../lib/release-scan.mjs';
 import {
+  commonFiles,
   portableFiles,
   engineNames,
   assertResourceMap,
@@ -116,6 +117,18 @@ async function fixture() {
     stem,
     pin,
     write,
+    async writeInstaller(extra = []) {
+      const entries = Object.entries(files)
+        .filter(([name]) => commonFiles.includes(name))
+        .map(([name, bytes]) => [
+          name === 'Rela.exe' ? 'rela.exe' : name,
+          bytes,
+        ]);
+      const artifact = path.join(directory, 'installer-payload.zip');
+      // ZIP fixtures exercise the payload rules through the same 7-Zip reader.
+      await writeFile(artifact, zip([...entries, ...extra]));
+      return artifact;
+    },
     scan: (artifact, options = {}) =>
       scanArtifact({
         artifact,
@@ -199,6 +212,59 @@ test('archive scanner decompresses allowlisted files and validates exact checksu
     const changed = await f.scan(artifact);
     assert.equal(changed.complete, false);
     assert.equal(changed.findings.at(-1).rule, 'engine_hash_mismatch');
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('installer scans generated files without requiring fixed NSIS internals', async () => {
+  const f = await fixture();
+  try {
+    for (const generated of [
+      [],
+      [
+        ['uninstall.exe', 'generated uninstaller'],
+        ['$PLUGINSDIR/new-helper.dll', 'generated plugin'],
+      ],
+    ]) {
+      const report = await f.scan(await f.writeInstaller(generated), {
+        kind: 'installer',
+      });
+      assert.equal(report.complete, true);
+      assert.equal(report.passed, true);
+      for (const [name] of generated)
+        assert.ok(report.artifacts.some((item) => item.member === name));
+    }
+  } finally {
+    await f.cleanup();
+  }
+});
+
+test('installer still checks required product resources and generated file contents', async () => {
+  const f = await fixture();
+  try {
+    const report = await f.scan(
+      await f.writeInstaller([
+        ['uninstall.exe', `credential_secret="${canary}"`],
+      ]),
+      { kind: 'installer' },
+    );
+    assert.equal(report.complete, true);
+    assert.equal(report.passed, false);
+    assert.ok(
+      report.findings.some(
+        (item) =>
+          item.member === 'uninstall.exe' &&
+          item.rule === 'credential_assignment',
+      ),
+    );
+    assert.ok(!JSON.stringify(report).includes(canary));
+    delete f.files['easytier/easytier-core.exe'];
+    const missing = await f.scan(await f.writeInstaller(), {
+      kind: 'installer',
+    });
+    assert.equal(missing.complete, false);
+    assert.equal(missing.findings.at(-1).rule, 'missing_archive_file');
   } finally {
     await f.cleanup();
   }

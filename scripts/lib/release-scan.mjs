@@ -4,12 +4,7 @@ import { createReadStream } from 'node:fs';
 import { lstat, readdir, readFile, open } from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import {
-  commonFiles,
-  portableFiles,
-  nsisPlugins,
-  engineNames,
-} from './release-layout.mjs';
+import { commonFiles, portableFiles, engineNames } from './release-layout.mjs';
 
 const MAX_FILE = 512 * 1024 * 1024;
 const MAX_TOTAL = 2 * 1024 * 1024 * 1024;
@@ -348,22 +343,23 @@ function layout(entries, kind, version, profile) {
   const stem = `Rela_${version}_x64-portable${profile === 'debug' ? '-debug' : ''}`;
   const expected =
     kind === 'installer'
-      ? [
-          ...commonFiles.map((f) => (f === 'Rela.exe' ? 'rela.exe' : f)),
-          ...nsisPlugins.map((f) => `$PLUGINSDIR/${f}`),
-        ]
+      ? commonFiles.map((f) => (f === 'Rela.exe' ? 'rela.exe' : f))
       : [...portableFiles, 'checksums.json'].map((f) => `${stem}/${f}`);
-  const allowed = new Set(expected),
-    names = new Set(entries.filter((e) => !e.directory).map((e) => e.name));
-  for (const entry of entries) {
-    if (entry.directory) {
-      if (
-        !expected.some((name) =>
-          name.startsWith(`${entry.name.replace(/\/$/, '')}/`),
+  const names = new Set(entries.filter((e) => !e.directory).map((e) => e.name));
+  // NSIS generates its own plugins and uninstaller. Check product resources,
+  // then scan every generated file without fixing the installer's internals.
+  if (kind === 'portable') {
+    const allowed = new Set(expected);
+    for (const entry of entries) {
+      if (entry.directory) {
+        if (
+          !expected.some((name) =>
+            name.startsWith(`${entry.name.replace(/\/$/, '')}/`),
+          )
         )
-      )
-        fail('unexpected_archive_directory');
-    } else if (!allowed.has(entry.name)) fail('unexpected_archive_file');
+          fail('unexpected_archive_directory');
+      } else if (!allowed.has(entry.name)) fail('unexpected_archive_file');
+    }
   }
   if (expected.some((name) => !names.has(name))) fail('missing_archive_file');
   return stem;
@@ -423,7 +419,9 @@ export async function scanArtifact({
       ...(['installer', 'portable'].includes(kind)
         ? [
             'decompressed_payload',
-            'fixed_file_inventory',
+            kind === 'installer'
+              ? 'required_product_resources'
+              : 'fixed_file_inventory',
             'checksums_and_engine_pin',
           ]
         : []),

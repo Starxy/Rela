@@ -204,8 +204,8 @@ try {
       await save();
       if (!scan.passed) throw new ScanFailure('artifact_scan_failed');
     }
-    // The generated packages contain only the allowlisted files. Record the
-    // exact archive report and snapshot, never developer environment values.
+    // Package resources and contents have been checked. Record the exact
+    // archive report and snapshot, never developer environment values.
     record.complete = true;
     record.passed = true;
     await save();

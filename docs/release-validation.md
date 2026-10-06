@@ -11,9 +11,9 @@
 3. 运行 `npm run check:packages`；debug 使用 `npm run check:packages -- --debug`。需要 7-Zip 在 PATH。
 4. 在独立 Windows 测试机验证手动安装、手动替换、连接和卸载。
 
-`check:packages` 检查压缩内容、固定文件清单、敏感内容、Core 固定摘要，以及两包共享资源的一致性；绿色版主程序须与编译输出相同。报告保存在 `target/<profile>/bundle/validation.json`。检查不执行安装器，不能证明真实安装或网络连接成功。
+`check:packages` 检查压缩内容、必要资源、敏感内容、Core 固定摘要，以及两包共享资源的一致性。安装包只要求产品资源齐全，插件和卸载程序由 NSIS 管理，全部文件仍扫描内容；绿色版保持固定文件清单，主程序须与编译输出相同。报告保存在 `target/<profile>/bundle/validation.json`。检查不执行安装器，不能证明真实安装或网络连接成功。
 
-Windows CI 执行工具测试、NSIS 构建与两包检查，无需软件更新包私钥。
+Windows CI 执行工具测试、NSIS 构建与两包检查，无需软件更新包私钥。检查失败时日志输出问题规则，扫描未完成时不判定共享资源不一致；CI 保留生成的验证报告 7 天。
 
 ## 隔离构建
 

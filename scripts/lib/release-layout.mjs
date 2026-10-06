@@ -22,15 +22,6 @@ export const commonFiles = [
   ...licenseNames.map((name) => `third-party-licenses/${name}`),
 ];
 export const portableFiles = [...commonFiles, 'README.txt', 'portable.txt'];
-export const nsisPlugins = [
-  'System.dll',
-  'modern-wizard.bmp',
-  'nsDialogs.dll',
-  'nsis_tauri_utils.dll',
-  'StartMenu.dll',
-  'LangDLL.dll',
-  'NSISdl.dll',
-];
 export const resourceMap = {
   ...Object.fromEntries(
     [...engineNames, 'manifest.json'].map((name) => [

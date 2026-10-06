@@ -36,6 +36,10 @@ try {
     });
     reports.push(report);
     console.log(`${kind}: ${report.passed ? 'PASS' : 'FAIL'}`);
+    if (!report.passed) {
+      const rules = [...new Set(report.findings.map((item) => item.rule))];
+      console.log(`${kind} 检查原因：${rules.join(', ')}。`);
+    }
   }
   const member = (report, name) => {
     const prefix =
@@ -48,17 +52,19 @@ try {
   };
   // Tauri stamps a different bundle marker into the NSIS executable.
   // Shared resources must match; each application binary is scanned separately.
-  const sharedResourcesEqual = commonFiles
-    .filter((name) => name !== 'Rela.exe')
-    .every((name) => {
-      const expected = member(reports[0], name)?.sha256;
-      return (
-        !!expected &&
-        reports.every((report) => member(report, name)?.sha256 === expected)
-      );
-    });
+  const sharedResourcesEqual = reports.every((report) => report.complete)
+    ? commonFiles
+        .filter((name) => name !== 'Rela.exe')
+        .every((name) => {
+          const expected = member(reports[0], name)?.sha256;
+          return (
+            !!expected &&
+            reports.every((report) => member(report, name)?.sha256 === expected)
+          );
+        })
+    : null;
   const passed =
-    sharedResourcesEqual && reports.every((report) => report.passed);
+    sharedResourcesEqual === true && reports.every((report) => report.passed);
   const result = {
     schema_version: 1,
     version,
@@ -74,7 +80,7 @@ try {
     JSON.stringify(result, null, 2) + '\n',
   );
   console.log(
-    `安装包与 ZIP 共享资源一致：${sharedResourcesEqual}。报告已保存至 bundle/validation.json。`,
+    `安装包与 ZIP 共享资源一致：${sharedResourcesEqual ?? '未完成'}。报告已保存至 bundle/validation.json。`,
   );
   if (!passed) process.exitCode = 1;
 } catch {

@@ -47,4 +47,12 @@ jobs:
       - run: npm run package:portable -- --debug
       - run: npm run tauri -- bundle --debug --no-sign --ci --bundles nsis
       - run: npm run check:packages -- --debug
+      - name: Upload package validation report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-package-validation
+          path: target/debug/bundle/validation.json
+          if-no-files-found: ignore
+          retention-days: 7
       - run: powershell -NoProfile -File scripts/test-portable-cleanup.ps1

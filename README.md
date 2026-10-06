@@ -69,7 +69,7 @@ Portable 省去界面安装步骤，首次连接仍需 UAC 授权并创建 `Rela
 
 仅重新打包已编译程序可运行 `npm run package:portable`；`-- --debug` 用于 CI 的 debug 包。发行前应使用完整 `desktop:portable` 构建，保证程序、前端和引擎资产一致。打包使用全新临时目录和固定文件清单，不包含用户 `data` 或构建配置源文件。
 
-两种包都生成后运行 `npm run check:packages`（调试包加 `-- --debug`），检查文件清单、引擎摘要、敏感内容及共享资源一致性。绿色版直接使用编译得到的程序；Tauri 为安装版写入不同的包类型标记，两份主程序不要求字节相同。详见[产物验证说明](docs/release-validation.md)。
+两种包都生成后运行 `npm run check:packages`（调试包加 `-- --debug`），检查必要资源、引擎摘要、敏感内容及共享资源一致性。安装包内部文件由 NSIS 管理，不固定插件或卸载程序的文件名；绿色版保持固定文件清单并直接使用编译得到的程序。Tauri 为安装版写入不同的包类型标记，两份主程序不要求字节相同。详见[产物验证说明](docs/release-validation.md)。
 
 ### 检查
 
