@@ -1,39 +1,41 @@
-Rela Portable — Windows x64 免安装版
+Rela 绿色版 — Windows 64 位
 
-使用
-1. 将 ZIP 完整解压到有写入权限的本地文件夹（推荐 NTFS），双击 Rela.exe。
-   请勿在压缩包内直接运行，也不要只复制一个 EXE。
-2. 电脑需要 Microsoft Edge WebView2 Runtime；若启动提示缺少运行库，可从微软安装：
+首次使用
+1. 将 ZIP 完整解压到本地有写入权限的文件夹，双击 Rela.exe。
+   保留包内全部文件；请勿在压缩包中运行，也不要只复制一个 EXE。
+2. 如果提示缺少 WebView2，请从微软安装运行库：
    https://developer.microsoft.com/microsoft-edge/webview2/
-3. 首次连接需要同意 Windows UAC 授权；之后同一 Windows 用户的日常连接、断开和重连无需重复授权。
-   更换网络引擎、网络参数、credential 或设备名称时需再次授权。
-4. 最小化或关闭窗口会隐藏到托盘。点击托盘图标恢复，右键选择“退出 Rela”退出界面。
-   退出界面后网络连接继续保持；需要断开时请使用首页开关。
+3. 等待默认配置加载完成，打开“设置 → 网络”，粘贴管理员提供的
+   credential 凭据，点击“保存”，然后打开首页的连接开关。
+4. 首次连接出现 Windows 管理员授权提示时，确认后继续。
+   同一 Windows 用户后续的日常连接、断开和重连通常无需再次授权；
+   更新软件或更改网络设置、凭据、设备名称后可能需要重新授权。
+5. 等待状态变为“已连接”，再打开“实验室资源”查看可用入口。
 
-数据和网络服务
-portable.txt 是便携模式标识，请保留在 Rela.exe 同目录。
-界面设置、加密网络配置、诊断和 WebView2 缓存保存在同目录的 data 文件夹。
-移动文件夹前请从托盘退出。已保存网络密钥受当前 Windows 用户的 DPAPI 保护，
-换电脑或换用户后请在设置中恢复默认或重新填写配置；data 不应随发行包分发。
+日常使用
+最小化或关闭窗口会隐藏到系统托盘，点击托盘图标可恢复窗口。
+右键托盘图标，选择“退出 Rela”可退出界面。退出界面后连接仍会保持；
+需要断开时，请先关闭首页的连接开关。
+安装版与绿色版共用本机网络服务，请使用一个 Rela 窗口控制连接。
+连接出现问题时，可以查看首页提示或打开“诊断”，将诊断摘要交给管理员。
 
-本版省去 Rela 安装程序。首次连接仍会注册专用 Windows 服务 RelaEasyTier，
-并将引擎及运行配置写入 %ProgramData%\Rela，网络驱动由 Windows 管理。
-因此删除解压目录不会自动停止或移除网络服务。
-安装版和 Portable 版共用这一服务，请勿同时使用多个副本控制连接。
-只读目录、FAT/exFAT 移动盘无法保证权限保护，请使用本地 NTFS 文件夹。
+设置与移动
+保留 Rela.exe 同目录的 portable.txt 文件。
+本地设置保存在 data 文件夹中。移动文件夹前请从系统托盘退出 Rela。
+保存的连接凭据绑定当前 Windows 用户；换电脑或换用户后需要重新填写。
+请勿把包含个人设置和凭据的 data 文件夹分享给其他人。
 
 手动更新
-发现新版本时，点击应用中的“前往 GitHub 下载”，获取完整绿色版 ZIP。
-从托盘退出 Rela，备份 data 文件夹后替换完整程序文件，保留原 data 和 portable.txt。
-继续使用同一 Windows 用户以读取加密凭据。更新后连接/重连时部署随包网络引擎。
+从 https://github.com/Starxy/Rela/releases 下载新版完整绿色版 ZIP。
+从系统托盘退出 Rela，备份 data 后替换完整程序文件，保留原 data 和 portable.txt。
 
 移除
+退出 Rela 后可以删除解压目录，但网络服务会继续保留。
+如果需要彻底移除网络服务：
 1. 先退出所有 Rela 界面。
 2. 右键 Remove-Network-Service.cmd，选择“以管理员身份运行”。
-   输入 REMOVE 后移除 RelaEasyTier 服务及其 ProgramData 数据。
-   这会断开 Rela 网络，也会影响本机安装版 Rela 使用的同一个服务。
-3. 确认工具显示完成后，删除本文件夹即可移除便携界面及本地设置。
-该工具不会卸载系统 WebView2 或共享网络驱动，也不会清理安装版的用户配置。
+3. 按提示输入 REMOVE。这会断开连接，并影响本机其他 Rela 副本。
+4. 确认工具显示完成后，再删除解压目录。
 
-本包为未签名的内部测试版本。许可说明见 THIRD-PARTY-NOTICES.md。
-checksums.json 提供文件 SHA-256 校验值。
+下载与反馈：https://github.com/Starxy/Rela
+第三方许可见 THIRD-PARTY-NOTICES.md；checksums.json 提供文件校验值。
